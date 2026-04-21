@@ -1,53 +1,34 @@
-import json
-import boto3
 import re
-import argparse
-import requests
-import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
+from typing import Optional
+from ...commons.data import ARTICLES_SEARCH_URL, HEADERS, MONTH_MAP
+from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_url, save_local, upload_to_s3
+from ...commons.tiers import TIER
+from ...commons.dataset import DATASET
 
-# ---- Config ------------------------------------------------------
-SOURCE = "choice"
-DATASET = "articles"
-TIER   = "public-sentiment"
-BASE_SEARCH_URL = "https://www.choice.com.au/?s=Medibank&tab=articles"
-BUCKET = "p000268ds-medibank-intelligence"
-
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=30)
 MAX_PAGES = 10
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
-
 # ---- Helper Functions ------------------------------------------------------
-def fetch_url(url: str) -> BeautifulSoup | None:
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-        time.sleep(1)  # Be polite to the server
-        return BeautifulSoup(response.text, "html.parser")
-    except requests.RequestException as e:
-        print(f"Error fetching {url}: {e}")
-        return None
-
-
-def is_within_cutoff(article_date: datetime | None) -> bool:
+def is_within_cutoff(article_date: Optional[datetime]) -> bool:
     if article_date is None:
         return True
-    return article_date >= CUTOFF_DATE
+    return article_date >= fetch_cutoff_date(30)
 
 
-def parse_article_date(soup: BeautifulSoup) -> datetime | None:
+from typing import Optional
+from datetime import datetime, timezone
+from bs4 import BeautifulSoup
+import re
+
+def parse_article_date(soup: BeautifulSoup) -> Optional[datetime]:
     text = soup.get_text(" ", strip=True)
 
     # Primary: "Last updated: 22 Apr 2025"
     match = re.search(r"Last updated:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", text, re.I)
     if match:
         day, month_str, year = match.groups()
-        month_map = {"Jan":"January","Feb":"February","Mar":"March","Apr":"April","May":"May",
-                     "Jun":"June","Jul":"July","Aug":"August","Sep":"September","Oct":"October",
-                     "Nov":"November","Dec":"December"}
-        full_month = month_map.get(month_str[:3], month_str)
+        full_month = MONTH_MAP.get(month_str[:3].lower(), month_str)
         try:
             return datetime.strptime(f"{day} {full_month} {year}", "%d %B %Y").replace(tzinfo=timezone.utc)
         except ValueError:
@@ -62,6 +43,7 @@ def parse_article_date(soup: BeautifulSoup) -> datetime | None:
             pass
 
     return None
+
 
 
 def fetch_article_content(article_url: str) -> dict:
@@ -92,7 +74,7 @@ def get_all_search_page_urls(base_url: str, max_pages: int = MAX_PAGES) -> list[
 # ---- Main Scraper ------------------------------------------------------
 def scrape_medibank_articles() -> list[dict]:
     results: list[dict] = []
-    search_urls = get_all_search_page_urls(BASE_SEARCH_URL)
+    search_urls = get_all_search_page_urls(ARTICLES_SEARCH_URL)
 
     for page_num, search_url in enumerate(search_urls, 1):
         print(f"\n=== Checking search page {page_num}: {search_url} ===")
@@ -136,7 +118,7 @@ def scrape_medibank_articles() -> list[dict]:
             # Date
             article_date = parse_article_date(soup_article)
             date_iso = article_date.isoformat() if article_date else None
-            date_str = article_date.strftime("%-d %B %Y") if article_date else None
+            date_str = f"{article_date.day} {article_date.strftime('%B %Y')}" if article_date else None
 
             if not is_within_cutoff(article_date):
                 print(f"    Skipped (before cutoff): {title}")
@@ -160,59 +142,26 @@ def scrape_medibank_articles() -> list[dict]:
 
     return results
 
-
-# ---- Output Helpers ------------------------------------------------------
-def build_payload(content: list[dict]) -> dict:
-    return {
-        "source": SOURCE,
-        "tier": TIER,
-        "dataset": DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url": BASE_SEARCH_URL,
-        "content": content,
-    }
-
-
-def save_local(payload: dict, directory: str = ".") -> None:
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{SOURCE}_{DATASET}_{date}.json"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"\nSaved locally: {path}")
-
-
-def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="ap-southeast-2")
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    key = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{date}.json"
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType="application/json",
-    )
-    print(f"Uploaded to S3: s3://{BUCKET}/{key}")
-
-
 # ---- Main ------------------------------------------------------
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="choice.com.au Medibank Articles Scraper")
-    parser.add_argument("--local", metavar="DIR", nargs="?", const=".",
-                        help="Save JSON locally instead of uploading to S3")
-    args = parser.parse_args()
-
+def run(local: Optional[str] = None) -> bool:
     print("Starting Medibank article scrape from choice.com.au...")
     articles = scrape_medibank_articles()
-
     if not articles:
         print("No articles found within the cutoff date.")
-        exit(1)
+        return False
 
     print(f"\nSuccessfully scraped {len(articles)} recent Medibank-related articles.")
+    payload = build_payload(
+        articles,
+        "choice",
+        DATASET.ARTICLES.value,
+        datetime.now(timezone.utc).isoformat(),
+        TIER.PUBLIC_SENTIMENT.value,
+        ARTICLES_SEARCH_URL
+    )
 
-    payload = build_payload(articles)
-
-    if args.local:
-        save_local(payload, args.local)
+    if local:
+        save_local(payload, local)
     else:
         upload_to_s3(payload)
+    return True

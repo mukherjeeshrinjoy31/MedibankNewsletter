@@ -1,50 +1,14 @@
-import json
 import re
-import boto3
-import argparse
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from bs4 import BeautifulSoup
-import requests
+from typing import Optional
 import urllib.parse
-
-# ---- Config ------------------------------------------------------
-SOURCE = "canstar"
-DATASET = "awards"
-TIER   = "public-sentiment"
-URL    = "https://www.canstar.com.au/star-ratings-awards/" # url for all canstar awards
-BUCKET = "p000268ds-medibank-intelligence"
-
-INSURANCE_PROVIDERS = "medibank"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
-
-# list of Canstar award pages to scrape based on Medibank's product focus
-INSURANCE_AWARD_URLS = [
-    # General insurance awards
-    "https://www.canstar.com.au/star-ratings-awards/insurer-of-the-year-award/",
-    "https://www.canstar.com.au/travel-insurance/star-ratings-awards/",
-    "https://www.canstar.com.au/pet-insurance/star-ratings-awards/",
-    # Personal insurance awards
-    "https://www.canstar.com.au/star-ratings-awards/health-insurance/",
-    "https://www.canstar.com.au/star-ratings-awards/overseas-student-working-visa-health/",
-    "https://www.canstar.com.au/star-ratings-awards/direct-life-insurance/",
-    "https://www.canstar.com.au/star-ratings-awards/direct-income-protection/",
-    # Customer satisfaction awards
-    "https://www.canstar.com.au/star-ratings-awards/most-satisfied-customers-health-insurer-award/",
-    "https://www.canstar.com.au/star-ratings-awards/most-satisfied-customers-travel-insurance-award/",
-    "https://www.canstar.com.au/star-ratings-awards/most-satisfied-customers-pet-insurance-awards/"
-]
+from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_url, save_local, upload_to_s3
+from ...commons.data import INSURANCE_AWARD_URLS, INSURANCE_PROVIDERS
+from ...commons.dataset import DATASET
+from ...commons.tiers import TIER
 
 # ---- Helper Functions ------------------------------------------------------
-
-def fetch_url(url: str) -> BeautifulSoup | None:
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-    except requests.RequestException as e:
-        print(f"Error fetching URL: {e}")
-        return None
 
 def medibank_mentioned(soup: BeautifulSoup) -> bool:
     return INSURANCE_PROVIDERS in soup.get_text().lower()
@@ -81,7 +45,7 @@ def cutoff_date(meta: dict) -> bool:
     try:
         date_str = released_date.replace("Released:", "").strip()
         release_dt = datetime.strptime(date_str, "%d %B, %Y").replace(tzinfo=timezone.utc)
-        return release_dt >= CUTOFF_DATE
+        return release_dt >= fetch_cutoff_date(7)
     except ValueError:
         return True
 
@@ -215,66 +179,27 @@ def scrape_all_insurance_awards() -> list[dict]:
  
     return results
 
-# ---- Output Helpers ------------------------------------------------------
-def build_payload(content: str) -> dict:
-    return {
-        "source":     SOURCE,
-        "tier":       TIER,
-        "dataset":    DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url":        URL,
-        "content":    content,
-    }
- 
-def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="ap-southeast-2")
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    key = (
-        f"raw/{payload['tier']}/"
-        f"{payload['source']}_{payload['dataset']}_{date}.json"
-    )
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType="application/json",
-    )
-    print(f"Uploaded: s3://{BUCKET}/{key}")
- 
-def save_local(payload: dict, directory: str = ".") -> None:
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{payload['source']}_{payload['dataset']}_{date}.json"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"Saved locally: {path}")
-
-
 # ---- Main Execution ------------------------------------------------------
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Canstar health insurance awards scraper"
-    )
-    parser.add_argument(
-        "--local",
-        metavar="DIR",
-        nargs="?",
-        const=".",
-        help="Save JSON locally to DIR instead of uploading to S3 (default: current directory)",
-    )
-    args = parser.parse_args()
- 
+def run(local: Optional[str] = None) -> bool:
     content = scrape_all_insurance_awards()
     if not content:
         print("[SKIP] Medibank was not found on any insurance award page — skipping output.")
-        raise SystemExit(1)
- 
-    print(f"\nFound Medibank awards on {len(content)} page(s).")
-    payload = build_payload(content)
- 
-    if args.local:
-        save_local(payload, args.local)
+        return False
+
+    payload = build_payload(
+        content,
+        "canstar",
+        DATASET.AWARDS.value,
+        datetime.now(timezone.utc).isoformat(),
+        TIER.PUBLIC_SENTIMENT.value,
+        INSURANCE_AWARD_URLS
+    )
+
+    if local:
+        save_local(payload, local)
     else:
         upload_to_s3(payload)
+    return True
 
 
     

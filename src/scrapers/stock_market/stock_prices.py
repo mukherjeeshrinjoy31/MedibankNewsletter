@@ -1,16 +1,16 @@
 import json
 import logging
 from datetime import datetime, timezone
+from ...commons.tiers import TIER
 import os
 
 import yfinance as yf
 import pandas as pd
 
-from utils.helpers import build_payload
+from ...utils.helpers import build_payload
 
 RAW_ROOT = './raw'
 ANALYTICS_ROOT = './analytics'
-TIER = 'competitor'
 TICKERS = [
     {'ticker': 'MPL.AX', 'source': 'asx_mpl'},
     {'ticker': 'NHF.AX', 'source': 'asx_nib'}
@@ -197,10 +197,10 @@ for item in TICKERS:
         source=source,
         dataset=dataset,
         scrapped_at=datetime.now(timezone.utc).isoformat(),
-        tier=TIER,
+        tier=TIER.COMPETITOR,
         url=url
     )
-    raw_path = write_json_file(RAW_ROOT, TIER, source, dataset, date_str, '.json', spec_payload)
+    raw_path = write_json_file(RAW_ROOT, TIER.COMPETITOR, source, dataset, date_str, '.json', spec_payload)
 
     # build and write financial metrics separately under analytics
     analytics_path = None
@@ -208,7 +208,7 @@ for item in TICKERS:
         metrics = get_financial_metrics(ticker)
         metrics_payload = {
             'source': source,
-            'tier': TIER,
+            'tier': TIER.COMPETITOR,
             'dataset': dataset,
             'scraped_at': spec_payload['scraped_at'],
             'url': url,
