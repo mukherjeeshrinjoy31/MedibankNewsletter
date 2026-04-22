@@ -1,0 +1,4 @@
+beautifulsoup4==4.14.3
+boto3==1.42.83
+pdfplumber==0.11.9
+Requests==2.33.1

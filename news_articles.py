@@ -10,7 +10,7 @@ from html.parser import HTMLParser
 TIER = "public-sentiment"
 DATASET = "news"
 BUCKET = "p000268ds-medibank-intelligence"
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=30)
+CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
 SOURCES = {
     "abc": {
         "url": "https://www.abc.net.au/",

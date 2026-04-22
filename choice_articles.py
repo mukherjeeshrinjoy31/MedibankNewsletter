@@ -14,7 +14,7 @@ TIER   = "public-sentiment"
 BASE_SEARCH_URL = "https://www.choice.com.au/?s=Medibank&tab=articles"
 BUCKET = "p000268ds-medibank-intelligence"
 
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=30)
+CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
 MAX_PAGES = 10
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
