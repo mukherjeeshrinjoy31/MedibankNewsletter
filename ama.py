@@ -207,7 +207,7 @@ def build_payload(content: str) -> dict:
 
 
 def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="ap-southeast-2")
+    s3 = boto3.client("s3", region_name="us-east-1")
     key = (
         f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_"
         f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"

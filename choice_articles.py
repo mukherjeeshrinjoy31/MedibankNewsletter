@@ -182,7 +182,7 @@ def save_local(payload: dict, directory: str = ".") -> None:
 
 
 def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="ap-southeast-2")
+    s3 = boto3.client("s3", region_name="us-east-1")
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     key = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{date}.json"
     s3.put_object(
