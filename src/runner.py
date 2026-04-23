@@ -6,6 +6,7 @@ from src.scrapers.public_sentiment.canstar_health_awards import run as run_canst
 from src.scrapers.public_sentiment.ama import run as run_ama
 from src.scrapers.public_sentiment.choice_articles import run as run_choice
 from src.scrapers.public_sentiment.news_articles import run as run_news
+from src.scrapers.stock_market.stock_prices import run as run_stock_prices
 # add other scrapers here as needed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -19,6 +20,8 @@ class ScraperOrchestrator:
             ("ama", run_ama),
             ("choice_articles", run_choice),
             ("news_articles", run_news),
+            # Add the new stock prices scraper
+            ("stock_prices", run_stock_prices),
         ]
 
     def run_all(self):

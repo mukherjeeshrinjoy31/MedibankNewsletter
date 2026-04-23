@@ -1,6 +1,7 @@
 AMA_SOURCE_URL = "https://www.ama.com.au/articles/ama-private-health-insurance-report-card-2025"
 ARTICLES_SEARCH_URL = "https://www.choice.com.au/?s=Medibank&tab=articles"
 AWARDS_URL = "https://www.canstar.com.au/star-ratings-awards/"
+YFINANCE_URL = "https://au.finance.yahoo.com/quote/ASX.AX/"
 
 INSURANCE_PROVIDERS = "medibank"
 
@@ -22,19 +23,20 @@ INSURANCE_AWARD_URLS = [
     "https://www.canstar.com.au/star-ratings-awards/most-satisfied-customers-pet-insurance-awards/"
 ]
 
-MONTH_MAP = {"Jan":"January",
-             "Feb":"February",
-             "Mar":"March",
-             "Apr":"April",
-             "May":"May",
-            "Jun":"June",
-            "Jul":"July",
-            "Aug":"August",
-            "Sep":"September",
-            "Oct":"October",
-            "Nov":"November",
-            "Dec":"December"
-            }
+MONTH_MAP = {
+    "Jan":"January",
+    "Feb":"February",
+    "Mar":"March",
+    "Apr":"April",
+    "May":"May",
+    "Jun":"June",
+    "Jul":"July",
+    "Aug":"August",
+    "Sep":"September",
+    "Oct":"October",
+    "Nov":"November",
+    "Dec":"December"
+}
 
 NEWS_SOURCES = {
     "abc": {
@@ -81,4 +83,9 @@ DATE_FORMATS = [
     "%a, %d %b %Y %H:%M:%S %z",
     "%Y-%m-%dT%H:%M:%S%z",
     "%Y-%m-%dT%H:%M:%SZ",
+]
+
+TICKERS = [
+    {'ticker': 'MPL.AX', 'source': 'asx_mpl'},
+    {'ticker': 'NHF.AX', 'source': 'asx_nib'}
 ]

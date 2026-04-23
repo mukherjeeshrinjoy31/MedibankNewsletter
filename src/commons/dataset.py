@@ -5,3 +5,5 @@ class DATASET(Enum):
     NEWS = "news"
     ARTICLES = "articles"
     AWARDS = "awards"
+    STOCK_PRICE = "stock_price"
+    FIN_METRICS = "financial_metrics"
