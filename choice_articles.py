@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urljoin, urlencode, urlparse
 import boto3
 import re
 import argparse
@@ -11,11 +12,14 @@ from datetime import datetime, timedelta, timezone
 SOURCE = "choice"
 DATASET = "articles"
 TIER   = "public-sentiment"
+URL = "https://www.choice.com.au"
 BASE_SEARCH_URL = "https://www.choice.com.au/?s=Medibank&tab=articles"
 BUCKET = "p000268ds-medibank-intelligence"
 
 CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
 MAX_PAGES = 10
+SEARCH_TERM = "Medibank"
+SEARCH_TAB = "articles"
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -80,19 +84,73 @@ def fetch_article_content(article_url: str) -> dict:
     full_text = body.get_text(" ", strip=True) if body else soup.get_text(" ", strip=True)
     return {"full_text": full_text}
 
+def discover_search_url(base_url: str, search_term: str, tab: str) -> str:
 
-# ---- Pagination (Fixed) ------------------------------------------------------
-def get_all_search_page_urls(base_url: str, max_pages: int = MAX_PAGES) -> list[str]:
-    urls = [base_url]
+    print(f"Discovering search URL from homepage: {base_url}")
+    soup = fetch_url(base_url)
+ 
+    form_action = None
+    query_param = "s"  
+ 
+    if soup:
+        search_form = (
+            soup.find("form", attrs={"role": "search"})
+            or soup.find("form", id=re.compile(r"search", re.I))
+            or soup.find("form", class_=re.compile(r"search", re.I))
+        )
+ 
+        if search_form is None:
+            for form in soup.find_all("form"):
+                if form.find("input", attrs={"type": "search"}) or \
+                   form.find("input", attrs={"name": "s"}):
+                    search_form = form
+                    break
+ 
+        if search_form:
+            raw_action = search_form.get("action", "").strip()
+            form_action = urljoin(base_url, raw_action) if raw_action else base_url
+ 
+            # Identify the query parameter name from the search input field
+            search_input = (
+                search_form.find("input", attrs={"type": "search"})
+                or search_form.find("input", attrs={"name": re.compile(r"^s$|query|q|search", re.I)})
+            )
+            if search_input and search_input.get("name"):
+                query_param = search_input["name"]
+ 
+            print(f"Found search form → action='{form_action}', param='{query_param}'")
+        else:
+            print("No search form found on homepage; using base URL as form action.")
+            form_action = base_url
+ 
+    else:
+        print("Could not fetch homepage; falling back to default search pattern.")
+        form_action = base_url
+ 
+    params = {query_param: search_term, "tab": tab}
+    search_url = f"{form_action.rstrip('/')}/?{urlencode(params)}"
+    print(f"  Constructed search URL: {search_url}")
+    return search_url
+
+def get_all_search_page_urls(base_search_url: str, max_pages: int = MAX_PAGES) -> list[str]:
+
+    urls = [base_search_url]
+ 
+    parsed = urlparse(base_search_url)
+    qs = f"?{parsed.query}" if parsed.query else ""
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+ 
     for page in range(2, max_pages + 1):
-        urls.append(f"https://www.choice.com.au/page/{page}?s=Medibank&tab=articles")
+        urls.append(f"{origin}/page/{page}{qs}")
+ 
     return urls
-
 
 # ---- Main Scraper ------------------------------------------------------
 def scrape_medibank_articles() -> list[dict]:
     results: list[dict] = []
-    search_urls = get_all_search_page_urls(BASE_SEARCH_URL)
+    
+    base_search_url = discover_search_url(URL, SEARCH_TERM, SEARCH_TAB)
+    search_urls = get_all_search_page_urls(base_search_url)
 
     for page_num, search_url in enumerate(search_urls, 1):
         print(f"\n=== Checking search page {page_num}: {search_url} ===")
@@ -168,7 +226,7 @@ def build_payload(content: list[dict]) -> dict:
         "tier": TIER,
         "dataset": DATASET,
         "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url": BASE_SEARCH_URL,
+        "url": URL,
         "content": content,
     }
 
