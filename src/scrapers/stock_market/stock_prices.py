@@ -195,8 +195,8 @@ def run(local: Optional[str] = None) -> bool:
 
     # Determine save method based on local flag
     if local:
-        save_local(stock_price_payload, local)
-        save_local(fin_metrics_payload, local)
+        save_local(stock_price_payload)
+        save_local(fin_metrics_payload)
     else:
         upload_to_s3(stock_price_payload)
         upload_to_s3(fin_metrics_payload)

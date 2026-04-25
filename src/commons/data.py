@@ -1,11 +1,22 @@
 AMA_SOURCE_URL = "https://www.ama.com.au/articles/ama-private-health-insurance-report-card-2025"
 ARTICLES_SEARCH_URL = "https://www.choice.com.au/?s=Medibank&tab=articles"
 AWARDS_URL = "https://www.canstar.com.au/star-ratings-awards/"
+ASX_MEDIBANK_RELEASES_URL = "https://www.medibank.com.au/livebetter/newsroom/classification/asx-releases"
+ASX_NIB_ANNOUNCEMENTS_URL = 'https://www.nib.com.au/shareholders/announcements'
+MEDIBANK_SPECIFIC_MEDIA_RELEASES_URL = 'https://www.medibank.com.au/livebetter/newsroom/classification/media-releases'
 YFINANCE_URL = "https://au.finance.yahoo.com/quote/ASX.AX/"
 
+MEDIBANK_NEWSROOM_TAG = "/livebetter/newsroom/post/"
+MEDIBANK_BASE_URL = "https://www.medibank.com.au"
 INSURANCE_PROVIDERS = "medibank"
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
 
 INSURANCE_AWARD_URLS = [
     # General insurance awards
@@ -23,6 +34,13 @@ INSURANCE_AWARD_URLS = [
     "https://www.canstar.com.au/star-ratings-awards/most-satisfied-customers-pet-insurance-awards/"
 ]
 
+NIB_ASX_SKIP_TITLES = [
+    "View our Reconciliation Action Plan",
+    "Terms & Conditions",
+    "Privacy Policy",
+    "Code of Conduct",
+]
+
 MONTH_MAP = {
     "Jan":"January",
     "Feb":"February",
@@ -36,6 +54,27 @@ MONTH_MAP = {
     "Oct":"October",
     "Nov":"November",
     "Dec":"December"
+}
+
+BOILERPLATE = {
+    "MEDIBANK" : [
+        
+        "These details are for journalist enquiries only.",
+        "If you are a customer please call",
+        "Copyright © 2026 Medibank Private Limited.",
+        "All rights reserved.",
+        "ABN 47 080 890 259.",
+        "Read more"
+    ],
+    "NIB" : [
+        "Copyright © 2026 nib health funds limited",
+        "ABN 83 000 124 381",
+        "Terms & Conditions",
+        "Privacy Policy",
+        "Code of Conduct",
+        "All of the documents below are in PDF format",
+        "Reconciliation Action Plan"
+    ]
 }
 
 NEWS_SOURCES = {
