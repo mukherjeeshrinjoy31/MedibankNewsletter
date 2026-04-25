@@ -1,0 +1,259 @@
+2026-04-25 15:58:19,743 [INFO] Starting nib_asx
+2026-04-25 15:58:24,249 [INFO]   Found: Notification of cessation of securities — 16 April 2026
+2026-04-25 15:58:24,250 [INFO]   Found: Notification regarding unquoted securities — 16 April 2026
+2026-04-25 15:58:24,250 [INFO]   Found: Appendix 2A - Application for quotation of securities — 8 April 2026
+2026-04-25 15:58:24,250 [INFO]   Found: 2026 Annual General Meeting - Change of Date — 7 April 2026
+2026-04-25 15:58:24,251 [INFO]   Found: Notice of ceasing to be a substantial holder - Mitsubishi UFJ Financial Group, Inc. — 2 April 2026
+2026-04-25 15:58:24,252 [INFO]   Found: Notice of ceasing to be a substantial holder - First Sentier Group Limited — 1 April 2026
+2026-04-25 15:58:24,252 [INFO]   Skipping (older than 7 days): Updated Appendix 3A.1 Notification of Dividend/Distribution
+2026-04-25 15:58:24,252 [INFO]   Skipping (older than 7 days): FY26 Half Year Results Investor Presentation
+2026-04-25 15:58:24,253 [INFO]   Skipping (older than 7 days): FY26 Half Year Results ASX Announcement
+2026-04-25 15:58:24,253 [INFO]   Skipping (older than 7 days): Appendix 3A.1 Notification of Dividend/Distribution
+2026-04-25 15:58:24,253 [INFO]   Skipping (older than 7 days): Appendix 4D and 2026 Interim Report
+2026-04-25 15:58:24,253 [INFO]   Skipping (older than 7 days): nib announces 2026 health insurance premium changes
+2026-04-25 15:58:24,254 [INFO]   Skipping (older than 7 days): Notice of initial substantial holder - Mitsubishi UFJ Financial Group, Inc.
+2026-04-25 15:58:24,254 [INFO]   Skipping (older than 7 days): Notice of initial substantial holder - First Sentier Group Limited
+2026-04-25 15:58:24,254 [INFO]   Skipping (older than 7 days): nib Group announces sale of World Nomads
+2026-04-25 15:58:24,254 [INFO]   Skipping (older than 7 days): Change of Directorâs Interest Notice â Ed Close
+2026-04-25 15:58:24,254 [INFO]   Skipping (older than 7 days): Notification regarding unquoted securities
+2026-04-25 15:58:24,255 [INFO]   Skipping (older than 7 days): Notice of Briefing â 2026 Half Year Results Presentation
+2026-04-25 15:58:24,255 [INFO] Found 6 announcements within last 7 days
+2026-04-25 15:58:24,255 [INFO] Processing (1/6): Notification of cessation of securities
+2026-04-25 15:58:26,388 [INFO]   Extracted 3094 characters
+2026-04-25 15:58:27,399 [INFO] Processing (2/6): Notification regarding unquoted securities
+2026-04-25 15:58:30,079 [INFO]   Extracted 4683 characters
+2026-04-25 15:58:31,087 [INFO] Processing (3/6): Appendix 2A - Application for quotation of securities
+2026-04-25 15:58:34,969 [INFO]   Extracted 4002 characters
+2026-04-25 15:58:35,976 [INFO] Processing (4/6): 2026 Annual General Meeting - Change of Date
+2026-04-25 15:58:38,573 [INFO]   Extracted 958 characters
+2026-04-25 15:58:39,585 [INFO] Processing (5/6): Notice of ceasing to be a substantial holder - Mitsubishi UFJ Financial Group, Inc.
+2026-04-25 15:59:23,591 [INFO]   Extracted 886898 characters
+2026-04-25 15:59:24,595 [INFO] Processing (6/6): Notice of ceasing to be a substantial holder - First Sentier Group Limited
+2026-04-25 15:59:30,239 [INFO]   Extracted 22310 characters
+2026-04-25 15:59:31,256 [INFO] Finished nib_asx (success=True)
+2026-04-25 15:59:31,257 [INFO] nib_asx -> OK
+2026-04-25 16:38:26,904 [INFO] Starting medibank_media
+2026-04-25 16:38:28,193 [INFO] Found 9 articles total
+2026-04-25 16:38:28,193 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-gp-care-model-cuts-hospital-risk-by-30-in-western-sydney
+2026-04-25 16:38:30,688 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/an-extra-year-for-ahm-customers-to-use-their-unused-routine-dental-annual-limits
+2026-04-25 16:38:33,214 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-to-support-customers-impacted-by-tropical-cyclone-narelle
+2026-04-25 16:38:35,709 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-celebrates-major-milestone-as-demand-for-at-home-acute-care
+2026-04-25 16:38:38,206 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/it-takes-a-village-medibank-partners-with-mum-walk-to-help-new-mums-feel
+2026-04-25 16:38:40,689 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-expands-innovative-psychotherapy-program-for-ptsd-and-trd-to-new
+2026-04-25 16:38:43,158 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-transition-care-service-to-streamline-patient-care
+2026-04-25 16:38:45,644 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/ahm-named-finders-health-fund-of-the-year
+2026-04-25 16:38:48,179 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-service-continues
+2026-04-25 16:38:50,711 [INFO] 9 articles within the last 7 days
+2026-04-25 16:38:50,714 [ERROR] Error running medibank_media
+Traceback (most recent call last):
+  File "C:\Users\Hp\Documents\SEM4\Medibank\MedibankNewsletter\src\runner.py", line 37, in run_all
+    ok = fn(self.local)
+  File "C:\Users\Hp\Documents\SEM4\Medibank\MedibankNewsletter\src\scrapers\medibank_specific\medibank_media_scraper.py", line 102, in run
+    save_local(payload, local)
+  File "C:\Users\Hp\Documents\SEM4\Medibank\MedibankNewsletter\src\utils\helpers.py", line 62, in save_local
+    with open(path, "w", encoding="utf-8") as fh:
+FileNotFoundError: [Errno 2] No such file or directory: 'data/medibank/medibank_specific_2026-04-25.json'
+2026-04-25 16:38:50,715 [INFO] medibank_media -> FAILED: [Errno 2] No such file or directory: 'data/medibank/medibank_specific_2026-04-25.json'
+2026-04-25 16:41:35,417 [INFO] Starting medibank_media
+2026-04-25 16:41:36,983 [INFO] Found 9 articles total
+2026-04-25 16:41:36,984 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-gp-care-model-cuts-hospital-risk-by-30-in-western-sydney
+2026-04-25 16:41:39,468 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/an-extra-year-for-ahm-customers-to-use-their-unused-routine-dental-annual-limits
+2026-04-25 16:41:42,073 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-to-support-customers-impacted-by-tropical-cyclone-narelle
+2026-04-25 16:41:44,540 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-celebrates-major-milestone-as-demand-for-at-home-acute-care
+2026-04-25 16:41:47,470 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/it-takes-a-village-medibank-partners-with-mum-walk-to-help-new-mums-feel
+2026-04-25 16:41:49,969 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-expands-innovative-psychotherapy-program-for-ptsd-and-trd-to-new
+2026-04-25 16:41:52,495 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-transition-care-service-to-streamline-patient-care
+2026-04-25 16:41:54,949 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/ahm-named-finders-health-fund-of-the-year
+2026-04-25 16:41:57,471 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-service-continues
+2026-04-25 16:41:59,974 [INFO] 9 articles within the last 7 days
+2026-04-25 16:41:59,975 [INFO] Finished medibank_media (success=True)
+2026-04-25 16:41:59,976 [INFO] medibank_media -> OK
+2026-04-25 16:48:39,329 [INFO] Starting medibank_media
+2026-04-25 16:48:40,603 [INFO] Found 9 articles total
+2026-04-25 16:48:40,603 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-gp-care-model-cuts-hospital-risk-by-30-in-western-sydney
+2026-04-25 16:48:43,098 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/an-extra-year-for-ahm-customers-to-use-their-unused-routine-dental-annual-limits
+2026-04-25 16:48:45,580 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-to-support-customers-impacted-by-tropical-cyclone-narelle
+2026-04-25 16:48:48,247 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-celebrates-major-milestone-as-demand-for-at-home-acute-care
+2026-04-25 16:48:50,778 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/it-takes-a-village-medibank-partners-with-mum-walk-to-help-new-mums-feel
+2026-04-25 16:48:53,267 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-expands-innovative-psychotherapy-program-for-ptsd-and-trd-to-new
+2026-04-25 16:48:55,809 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-transition-care-service-to-streamline-patient-care
+2026-04-25 16:48:58,325 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/ahm-named-finders-health-fund-of-the-year
+2026-04-25 16:49:00,857 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-service-continues
+2026-04-25 16:49:03,386 [INFO] 9 articles within the last 7 days
+2026-04-25 16:49:03,387 [ERROR] Error running medibank_media
+Traceback (most recent call last):
+  File "C:\Users\Hp\Documents\SEM4\Medibank\MedibankNewsletter\src\runner.py", line 37, in run_all
+    ok = fn(self.local)
+  File "C:\Users\Hp\Documents\SEM4\Medibank\MedibankNewsletter\src\scrapers\medibank_specific\medibank_media_scraper.py", line 102, in run
+    save_local(payload, local)
+TypeError: save_local() takes 1 positional argument but 2 were given
+2026-04-25 16:49:03,388 [INFO] medibank_media -> FAILED: save_local() takes 1 positional argument but 2 were given
+2026-04-25 16:51:21,324 [INFO] Starting medibank_media
+2026-04-25 16:51:22,582 [INFO] Found 9 articles total
+2026-04-25 16:51:22,582 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-gp-care-model-cuts-hospital-risk-by-30-in-western-sydney
+2026-04-25 16:51:25,096 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/an-extra-year-for-ahm-customers-to-use-their-unused-routine-dental-annual-limits
+2026-04-25 16:51:27,599 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-to-support-customers-impacted-by-tropical-cyclone-narelle
+2026-04-25 16:51:30,078 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-celebrates-major-milestone-as-demand-for-at-home-acute-care
+2026-04-25 16:51:32,549 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/it-takes-a-village-medibank-partners-with-mum-walk-to-help-new-mums-feel
+2026-04-25 16:51:35,036 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-expands-innovative-psychotherapy-program-for-ptsd-and-trd-to-new
+2026-04-25 16:51:37,561 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-transition-care-service-to-streamline-patient-care
+2026-04-25 16:51:40,054 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/ahm-named-finders-health-fund-of-the-year
+2026-04-25 16:51:42,503 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-service-continues
+2026-04-25 16:51:45,015 [INFO] 9 articles within the last 7 days
+2026-04-25 16:51:45,018 [INFO] Finished medibank_media (success=True)
+2026-04-25 16:51:45,018 [INFO] medibank_media -> OK
+2026-04-25 16:55:06,813 [INFO] Starting canstar_health_awards
+2026-04-25 16:55:43,823 [INFO] Finished canstar_health_awards (success=True)
+2026-04-25 16:55:43,823 [INFO] Starting ama
+2026-04-25 16:55:49,915 [INFO] Finished ama (success=True)
+2026-04-25 16:55:49,916 [INFO] Starting choice_articles
+2026-04-25 16:58:17,291 [INFO] Finished choice_articles (success=True)
+2026-04-25 16:58:17,292 [INFO] Starting news_articles
+2026-04-25 16:58:23,839 [INFO] Finished news_articles (success=False)
+2026-04-25 16:58:23,839 [INFO] Starting stock_prices
+2026-04-25 16:58:38,874 [INFO] Finished stock_prices (success=True)
+2026-04-25 16:58:38,874 [INFO] Starting medibank_asx
+2026-04-25 16:58:40,509 [INFO] Found 9 articles total
+2026-04-25 16:58:40,509 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/2022-cybercrime-event--consumer-class-action
+2026-04-25 16:58:43,053 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/2026-half-year-results
+2026-04-25 16:58:45,806 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-announces-2026-premium-change
+2026-04-25 16:58:48,299 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/re-presentation-of-segment-results-and-changes-in-terminology
+2026-04-25 16:58:50,822 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibanks-fy26-half-year-key-dates
+2026-04-25 16:58:53,321 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/2025-agm-chair-and-ceo-address
+2026-04-25 16:58:55,844 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/jay-weatherill-to-retire-as-medibank-board-director
+2026-04-25 16:58:58,409 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-grows-primary-care-support-with-acquisition-of-better-medical
+2026-04-25 16:59:01,350 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-sets-new-ambition-in-health
+2026-04-25 16:59:04,131 [INFO] 9 articles within the last 7 days
+2026-04-25 16:59:04,134 [INFO] Finished medibank_asx (success=True)
+2026-04-25 16:59:04,135 [INFO] Starting nib_asx
+2026-04-25 16:59:05,461 [INFO]   Found: Notification of cessation of securities — 16 April 2026
+2026-04-25 16:59:05,461 [INFO]   Found: Notification regarding unquoted securities — 16 April 2026
+2026-04-25 16:59:05,462 [INFO]   Found: Appendix 2A - Application for quotation of securities — 8 April 2026
+2026-04-25 16:59:05,462 [INFO]   Found: 2026 Annual General Meeting - Change of Date — 7 April 2026
+2026-04-25 16:59:05,462 [INFO]   Found: Notice of ceasing to be a substantial holder - Mitsubishi UFJ Financial Group, Inc. — 2 April 2026
+2026-04-25 16:59:05,462 [INFO]   Found: Notice of ceasing to be a substantial holder - First Sentier Group Limited — 1 April 2026
+2026-04-25 16:59:05,463 [INFO]   Skipping (older than 7 days): Updated Appendix 3A.1 Notification of Dividend/Distribution
+2026-04-25 16:59:05,463 [INFO]   Skipping (older than 7 days): FY26 Half Year Results Investor Presentation
+2026-04-25 16:59:05,463 [INFO]   Skipping (older than 7 days): FY26 Half Year Results ASX Announcement
+2026-04-25 16:59:05,463 [INFO]   Skipping (older than 7 days): Appendix 3A.1 Notification of Dividend/Distribution
+2026-04-25 16:59:05,464 [INFO]   Skipping (older than 7 days): Appendix 4D and 2026 Interim Report
+2026-04-25 16:59:05,464 [INFO]   Skipping (older than 7 days): nib announces 2026 health insurance premium changes
+2026-04-25 16:59:05,464 [INFO]   Skipping (older than 7 days): Notice of initial substantial holder - Mitsubishi UFJ Financial Group, Inc.
+2026-04-25 16:59:05,465 [INFO]   Skipping (older than 7 days): Notice of initial substantial holder - First Sentier Group Limited
+2026-04-25 16:59:05,465 [INFO]   Skipping (older than 7 days): nib Group announces sale of World Nomads
+2026-04-25 16:59:05,465 [INFO]   Skipping (older than 7 days): Change of Directorâs Interest Notice â Ed Close
+2026-04-25 16:59:05,465 [INFO]   Skipping (older than 7 days): Notification regarding unquoted securities
+2026-04-25 16:59:05,465 [INFO]   Skipping (older than 7 days): Notice of Briefing â 2026 Half Year Results Presentation
+2026-04-25 16:59:05,465 [INFO] Found 6 announcements within last 7 days
+2026-04-25 16:59:05,465 [INFO] Processing (1/6): Notification of cessation of securities
+2026-04-25 16:59:05,707 [INFO]   Extracted 3094 characters
+2026-04-25 16:59:06,719 [INFO] Processing (2/6): Notification regarding unquoted securities
+2026-04-25 16:59:07,014 [INFO]   Extracted 4683 characters
+2026-04-25 16:59:08,016 [INFO] Processing (3/6): Appendix 2A - Application for quotation of securities
+2026-04-25 16:59:08,296 [INFO]   Extracted 4002 characters
+2026-04-25 16:59:09,299 [INFO] Processing (4/6): 2026 Annual General Meeting - Change of Date
+2026-04-25 16:59:09,521 [INFO]   Extracted 958 characters
+2026-04-25 16:59:10,532 [INFO] Processing (5/6): Notice of ceasing to be a substantial holder - Mitsubishi UFJ Financial Group, Inc.
+2026-04-25 16:59:46,835 [INFO]   Extracted 886898 characters
+2026-04-25 16:59:47,840 [INFO] Processing (6/6): Notice of ceasing to be a substantial holder - First Sentier Group Limited
+2026-04-25 16:59:48,990 [INFO]   Extracted 22310 characters
+2026-04-25 16:59:50,003 [INFO] Finished nib_asx (success=True)
+2026-04-25 16:59:50,003 [INFO] Starting medibank_media
+2026-04-25 16:59:51,216 [INFO] Found 9 articles total
+2026-04-25 16:59:51,217 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-gp-care-model-cuts-hospital-risk-by-30-in-western-sydney
+2026-04-25 16:59:53,733 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/an-extra-year-for-ahm-customers-to-use-their-unused-routine-dental-annual-limits
+2026-04-25 16:59:56,212 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-to-support-customers-impacted-by-tropical-cyclone-narelle
+2026-04-25 16:59:58,759 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-celebrates-major-milestone-as-demand-for-at-home-acute-care
+2026-04-25 17:00:01,287 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/it-takes-a-village-medibank-partners-with-mum-walk-to-help-new-mums-feel
+2026-04-25 17:00:03,780 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-expands-innovative-psychotherapy-program-for-ptsd-and-trd-to-new
+2026-04-25 17:00:06,227 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-transition-care-service-to-streamline-patient-care
+2026-04-25 17:00:08,737 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/ahm-named-finders-health-fund-of-the-year
+2026-04-25 17:00:11,238 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-service-continues
+2026-04-25 17:00:13,721 [INFO] 9 articles within the last 7 days
+2026-04-25 17:00:13,723 [INFO] Finished medibank_media (success=True)
+2026-04-25 17:00:13,724 [INFO] canstar_health_awards -> OK
+2026-04-25 17:00:13,724 [INFO] ama -> OK
+2026-04-25 17:00:13,724 [INFO] choice_articles -> OK
+2026-04-25 17:00:13,724 [INFO] news_articles -> FAILED: None
+2026-04-25 17:00:13,724 [INFO] stock_prices -> OK
+2026-04-25 17:00:13,724 [INFO] medibank_asx -> OK
+2026-04-25 17:00:13,725 [INFO] nib_asx -> OK
+2026-04-25 17:00:13,725 [INFO] medibank_media -> OK
+2026-04-25 17:09:35,653 [INFO] Deleted existing data/ directory for a fresh run
+2026-04-25 17:09:35,653 [INFO] Starting canstar_health_awards
+2026-04-25 17:09:48,660 [INFO] Finished canstar_health_awards (success=True)
+2026-04-25 17:09:48,660 [INFO] Starting ama
+2026-04-25 17:09:53,965 [INFO] Finished ama (success=True)
+2026-04-25 17:09:53,966 [INFO] Starting choice_articles
+2026-04-25 17:11:41,078 [INFO] Finished choice_articles (success=True)
+2026-04-25 17:11:41,079 [INFO] Starting news_articles
+2026-04-25 17:11:48,690 [INFO] Finished news_articles (success=False)
+2026-04-25 17:11:48,691 [INFO] Starting stock_prices
+2026-04-25 17:11:51,848 [INFO] Finished stock_prices (success=True)
+2026-04-25 17:11:51,849 [INFO] Starting medibank_asx
+2026-04-25 17:11:53,448 [INFO] Found 9 articles total
+2026-04-25 17:11:53,449 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/2022-cybercrime-event--consumer-class-action
+2026-04-25 17:11:55,991 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/2026-half-year-results
+2026-04-25 17:11:58,516 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-announces-2026-premium-change
+2026-04-25 17:12:01,168 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/re-presentation-of-segment-results-and-changes-in-terminology
+2026-04-25 17:12:03,791 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibanks-fy26-half-year-key-dates
+2026-04-25 17:12:06,269 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/2025-agm-chair-and-ceo-address
+2026-04-25 17:12:08,800 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/jay-weatherill-to-retire-as-medibank-board-director
+2026-04-25 17:12:11,330 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-grows-primary-care-support-with-acquisition-of-better-medical
+2026-04-25 17:12:13,842 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-sets-new-ambition-in-health
+2026-04-25 17:12:16,344 [INFO] 9 articles within the last 7 days
+2026-04-25 17:12:16,347 [INFO] Finished medibank_asx (success=True)
+2026-04-25 17:12:16,347 [INFO] Starting nib_asx
+2026-04-25 17:12:17,618 [INFO]   Found: Notification of cessation of securities — 16 April 2026
+2026-04-25 17:12:17,618 [INFO]   Found: Notification regarding unquoted securities — 16 April 2026
+2026-04-25 17:12:17,619 [INFO]   Found: Appendix 2A - Application for quotation of securities — 8 April 2026
+2026-04-25 17:12:17,619 [INFO]   Found: 2026 Annual General Meeting - Change of Date — 7 April 2026
+2026-04-25 17:12:17,619 [INFO]   Found: Notice of ceasing to be a substantial holder - Mitsubishi UFJ Financial Group, Inc. — 2 April 2026
+2026-04-25 17:12:17,619 [INFO]   Found: Notice of ceasing to be a substantial holder - First Sentier Group Limited — 1 April 2026
+2026-04-25 17:12:17,620 [INFO]   Skipping (older than 7 days): Updated Appendix 3A.1 Notification of Dividend/Distribution
+2026-04-25 17:12:17,620 [INFO]   Skipping (older than 7 days): FY26 Half Year Results Investor Presentation
+2026-04-25 17:12:17,620 [INFO]   Skipping (older than 7 days): FY26 Half Year Results ASX Announcement
+2026-04-25 17:12:17,620 [INFO]   Skipping (older than 7 days): Appendix 3A.1 Notification of Dividend/Distribution
+2026-04-25 17:12:17,620 [INFO]   Skipping (older than 7 days): Appendix 4D and 2026 Interim Report
+2026-04-25 17:12:17,621 [INFO]   Skipping (older than 7 days): nib announces 2026 health insurance premium changes
+2026-04-25 17:12:17,621 [INFO]   Skipping (older than 7 days): Notice of initial substantial holder - Mitsubishi UFJ Financial Group, Inc.
+2026-04-25 17:12:17,621 [INFO]   Skipping (older than 7 days): Notice of initial substantial holder - First Sentier Group Limited
+2026-04-25 17:12:17,621 [INFO]   Skipping (older than 7 days): nib Group announces sale of World Nomads
+2026-04-25 17:12:17,622 [INFO]   Skipping (older than 7 days): Change of Directorâs Interest Notice â Ed Close
+2026-04-25 17:12:17,622 [INFO]   Skipping (older than 7 days): Notification regarding unquoted securities
+2026-04-25 17:12:17,622 [INFO]   Skipping (older than 7 days): Notice of Briefing â 2026 Half Year Results Presentation
+2026-04-25 17:12:17,622 [INFO] Found 6 announcements within last 7 days
+2026-04-25 17:12:17,622 [INFO] Processing (1/6): Notification of cessation of securities
+2026-04-25 17:12:17,908 [INFO]   Extracted 3094 characters
+2026-04-25 17:12:18,913 [INFO] Processing (2/6): Notification regarding unquoted securities
+2026-04-25 17:12:19,204 [INFO]   Extracted 4683 characters
+2026-04-25 17:12:20,218 [INFO] Processing (3/6): Appendix 2A - Application for quotation of securities
+2026-04-25 17:12:20,476 [INFO]   Extracted 4002 characters
+2026-04-25 17:12:21,483 [INFO] Processing (4/6): 2026 Annual General Meeting - Change of Date
+2026-04-25 17:12:21,714 [INFO]   Extracted 958 characters
+2026-04-25 17:12:22,719 [INFO] Processing (5/6): Notice of ceasing to be a substantial holder - Mitsubishi UFJ Financial Group, Inc.
+2026-04-25 17:12:59,433 [INFO]   Extracted 886898 characters
+2026-04-25 17:13:00,438 [INFO] Processing (6/6): Notice of ceasing to be a substantial holder - First Sentier Group Limited
+2026-04-25 17:13:01,548 [INFO]   Extracted 22310 characters
+2026-04-25 17:13:02,569 [INFO] Finished nib_asx (success=True)
+2026-04-25 17:13:02,570 [INFO] Starting medibank_media
+2026-04-25 17:13:03,802 [INFO] Found 9 articles total
+2026-04-25 17:13:03,803 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-gp-care-model-cuts-hospital-risk-by-30-in-western-sydney
+2026-04-25 17:13:06,325 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/an-extra-year-for-ahm-customers-to-use-their-unused-routine-dental-annual-limits
+2026-04-25 17:13:08,808 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-to-support-customers-impacted-by-tropical-cyclone-narelle
+2026-04-25 17:13:11,304 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-celebrates-major-milestone-as-demand-for-at-home-acute-care
+2026-04-25 17:13:13,831 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/it-takes-a-village-medibank-partners-with-mum-walk-to-help-new-mums-feel
+2026-04-25 17:13:16,287 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/medibank-expands-innovative-psychotherapy-program-for-ptsd-and-trd-to-new
+2026-04-25 17:13:18,789 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/new-transition-care-service-to-streamline-patient-care
+2026-04-25 17:13:21,313 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/ahm-named-finders-health-fund-of-the-year
+2026-04-25 17:13:23,824 [INFO] Scraping: https://www.medibank.com.au/livebetter/newsroom/post/my-home-hospital-service-continues
+2026-04-25 17:13:26,330 [INFO] 9 articles within the last 7 days
+2026-04-25 17:13:26,332 [INFO] Finished medibank_media (success=True)
+2026-04-25 17:13:26,332 [INFO] canstar_health_awards -> OK
+2026-04-25 17:13:26,332 [INFO] ama -> OK
+2026-04-25 17:13:26,333 [INFO] choice_articles -> OK
+2026-04-25 17:13:26,333 [INFO] news_articles -> FAILED: None
+2026-04-25 17:13:26,333 [INFO] stock_prices -> OK
+2026-04-25 17:13:26,333 [INFO] medibank_asx -> OK
+2026-04-25 17:13:26,334 [INFO] nib_asx -> OK
+2026-04-25 17:13:26,334 [INFO] medibank_media -> OK

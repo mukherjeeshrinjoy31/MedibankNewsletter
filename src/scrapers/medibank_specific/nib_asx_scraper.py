@@ -2,44 +2,18 @@ import io
 import json
 import time
 import logging
+from typing import Optional
 import requests
 import pdfplumber
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from bs4 import BeautifulSoup
+from ...commons.data import ASX_NIB_ANNOUNCEMENTS_URL, BOILERPLATE, HEADERS, NIB_ASX_SKIP_TITLES
+from ...commons.dataset import DATASET
+from ...commons.tiers import TIER
+from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_run_date, fetch_url, save_local, upload_to_s3
 
 # ── Config ──────────────────────────────────────────────────────
 SOURCE  = 'nib'
-TIER    = 'medibank_specific'
-DATASET = 'asx_announcements'
-URL     = 'https://www.nib.com.au/shareholders/announcements'
-BUCKET  = 'p000268ds-medibank-intelligence'
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-# ── Boilerplate to strip ─────────────────────────────────────────
-BOILERPLATE = [
-    "Copyright © 2026 nib health funds limited",
-    "ABN 83 000 124 381",
-    "Terms & Conditions",
-    "Privacy Policy",
-    "Code of Conduct",
-    "All of the documents below are in PDF format",
-    "Reconciliation Action Plan",
-]
-
-# ── Junk titles to skip ──────────────────────────────────────────
-SKIP_TITLES = [
-    "View our Reconciliation Action Plan",
-    "Terms & Conditions",
-    "Privacy Policy",
-    "Code of Conduct",
-]
 
 # ── Logging ──────────────────────────────────────────────────────
 logging.basicConfig(
@@ -52,22 +26,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Fix Windows terminal encoding
-import sys
-if sys.stdout.encoding != "utf-8":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-# ── 7 Day Filter ────────────────────────────────────────────────
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=30)
-
-
 # ── Step 1: Get announcement links from the main page ────────────
 def get_announcement_links():
     try:
-        response = requests.get(URL, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
+        soup = fetch_url(ASX_NIB_ANNOUNCEMENTS_URL)
         announcements = []
 
         for a in soup.find_all("a", href=True):
@@ -81,32 +43,21 @@ def get_announcement_links():
                 continue
 
             # Skip junk titles
-            if any(junk in title for junk in SKIP_TITLES):
+            if any(junk in title for junk in NIB_ASX_SKIP_TITLES):
                 continue
 
             # The date sits in a separate element after the link
             # Look at the parent element text to find the date
             date_text = ""
             parent = a.find_parent()
-            if parent:
-                parent_text = parent.get_text(separator="|", strip=True)
-                # Date format is like "8 April 2026"
-                import re
-                date_match = re.search(
-                    r'(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})',
-                    parent_text
-                )
-                if date_match:
-                    date_text = date_match.group(1)
-                    # Clean date from title if it got merged in
-                    title = title.replace(date_text, "").strip()
+            title, date_text = extract_date_from_parent(title, parent)
 
             # 7 day filter
             if date_text:
                 try:
                     pub_date = datetime.strptime(date_text, "%d %B %Y")
                     pub_date = pub_date.replace(tzinfo=timezone.utc)
-                    if pub_date < CUTOFF_DATE:
+                    if pub_date < fetch_cutoff_date(30):
                         log.info(f"  Skipping (older than 7 days): {title}")
                         continue
                 except Exception as e:
@@ -128,6 +79,21 @@ def get_announcement_links():
     except Exception as e:
         log.error(f"Failed to get announcement links: {e}")
         return []
+
+def extract_date_from_parent(title, parent):
+    if parent:
+        parent_text = parent.get_text(separator="|", strip=True)
+                # Date format is like "8 April 2026"
+        import re
+        date_match = re.search(
+                    r'(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})',
+                    parent_text
+                )
+        if date_match:
+            date_text = date_match.group(1)
+                    # Clean date from title if it got merged in
+            title = title.replace(date_text, "").strip()
+    return title,date_text
 
 
 # ── Step 2: Follow link and find the actual PDF URL ──────────────
@@ -174,7 +140,7 @@ def extract_pdf_text(pdf_content):
                     text += page_text + "\n"
 
         # Clean boilerplate
-        for phrase in BOILERPLATE:
+        for phrase in BOILERPLATE['NIB']:
             text = text.replace(phrase, "")
 
         # Clean up encoding artifacts
@@ -211,17 +177,16 @@ def scrape():
                 log.info(f"  Extracted {len(text)} characters")
             else:
                 all_content.append(f"{i+1}. {title} — {date}")
-                log.warning(f"  PDF extraction failed, using title only")
+                log.warning("  PDF extraction failed, using title only")
         else:
             all_content.append(f"{i+1}. {title} — {date}")
-            log.warning(f"  No PDF found, using title only")
+            log.warning("  No PDF found, using title only")
 
         time.sleep(1)
 
-    run_date = datetime.now(timezone.utc).isoformat()
     content = (
-        f"Source: {SOURCE} | Dataset: {DATASET} | "
-        f"Run Date: {run_date} | "
+        f"Source: {SOURCE} | Dataset: {DATASET.ASX_ANNOUNCEMENTS} | "
+        f"Run Date: {fetch_run_date()} | "
         f"Announcements: {len(all_content)}\n\n"
         + "\n\n".join(all_content)
     )
@@ -229,55 +194,21 @@ def scrape():
     return content
 
 
-# ── Step 5: Build payload ────────────────────────────────────────
-def build_payload(content: str) -> dict:
-    return {
-        'source':     SOURCE,
-        'tier':       TIER,
-        'dataset':    DATASET,
-        'scraped_at': datetime.now(timezone.utc).isoformat(),
-        'url':        URL,
-        'content':    content,
-    }
-
-
-# ── Step 6: Save locally ─────────────────────────────────────────
-def save_locally(payload: dict) -> None:
-    date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    filename = f"{SOURCE}_{DATASET}_{date}.json"
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
-        log.info(f"Saved: {filename}")
-    except Exception as e:
-        log.error(f"Failed to save file: {e}")
-
-
-# ── Step 7: Upload to S3 (uncomment when ready) ──────────────────
-# def upload_to_s3(payload: dict) -> None:
-#     import boto3
-#     s3   = boto3.client('s3', region_name='ap-southeast-2')
-#     date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-#     key  = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{date}.json"
-#     s3.put_object(Bucket=BUCKET, Key=key,
-#                   Body=json.dumps(payload, ensure_ascii=False),
-#                   ContentType='application/json')
-#     log.info(f'Uploaded: s3://{BUCKET}/{key}')
-
-
-# ── Main ─────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    log.info("=" * 50)
-    log.info(f"Starting scrape: {SOURCE} / {DATASET}")
-    log.info("=" * 50)
-
+def run(local: Optional[str] = None) -> bool:
+    print(f"Scraping Medibank Specific Sources (NIB ASX Announcements) from: \n  {ASX_NIB_ANNOUNCEMENTS_URL} \n")
     content = scrape()
+    print(f"\nExtracted {len(content):,} characters of text.")
+    payload = build_payload(
+        content,
+        SOURCE,
+        DATASET.ASX_ANNOUNCEMENTS.value,
+        fetch_run_date(),
+        TIER.MEDIBANK_SPECIFIC.value,
+        ASX_NIB_ANNOUNCEMENTS_URL  
+    )
 
-    if not content:
-        log.warning("No content found — file will not be saved")
+    if local:
+        save_local(payload)
     else:
-        payload = build_payload(content)
-        save_locally(payload)
-        # swap to upload_to_s3(payload) when ready for S3
-
-    log.info("Scrape complete")
+        upload_to_s3(payload)
+    return True  

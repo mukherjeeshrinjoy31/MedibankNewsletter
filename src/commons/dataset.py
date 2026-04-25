@@ -7,3 +7,6 @@ class DATASET(Enum):
     AWARDS = "awards"
     STOCK_PRICE = "stock_price"
     FIN_METRICS = "financial_metrics"
+    ASX_ANNOUNCEMENTS = "asx_announcements"
+    ASX_RELEASES = "asx_releases"
+    MEDIA_RELEASES = "media_releases"

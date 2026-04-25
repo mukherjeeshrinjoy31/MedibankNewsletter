@@ -196,7 +196,7 @@ def run(local: Optional[str] = None) -> bool:
     )
 
     if local:
-        save_local(payload, local)
+        save_local(payload)
     else:
         upload_to_s3(payload)
     return True

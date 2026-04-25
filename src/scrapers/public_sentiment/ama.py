@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from typing import Optional
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from ...commons.data import AMA_SOURCE_URL, HEADERS
+from ...commons.data import AMA_SOURCE_URL
 from ...utils.helpers import build_payload, download_pdf, fetch_url, save_local, upload_to_s3
 
 # ------------------------------------------------------------------
@@ -64,7 +64,7 @@ def run(local: Optional[str] = None) -> bool:
     )
 
     if local:
-        save_local(payload, local)
+        save_local(payload)
     else:
         upload_to_s3(payload)
     return True
