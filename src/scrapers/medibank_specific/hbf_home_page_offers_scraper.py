@@ -1,41 +1,17 @@
-import json
 import logging
-import requests
 import sys
-import os
-from datetime import datetime, timezone
-from bs4 import BeautifulSoup
+from typing import Optional
+
+from ...commons.data import BOILERPLATE, HBF_URL, OFFER_KEYWORDS
+from ...commons.dataset import DATASET
+from ...commons.tiers import TIER
+from ...utils.helpers import build_payload, clean_text, fetch_run_date, fetch_url, load_last_offer, save_current_offer, save_local, upload_to_s3
 
 # ── Config ──────────────────────────────────────────────────────
 SOURCE  = 'hbf'
-TIER    = 'medibank_specific'
-DATASET = 'customer_offers'
-URL     = 'https://www.hbf.com.au'
-BUCKET  = 'p000268ds-medibank-intelligence'
 
 # File to store last week's offer for comparison
-LAST_OFFER_FILE = 'hbf_last_offer.txt'
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-# ── Boilerplate to strip ─────────────────────────────────────────
-BOILERPLATE = [
-    "T&Cs apply",
-    "T&Cs.",
-    "Opens in a new window",
-    "Resume quote",
-    "Find the right cover in minutes",
-    "Health Insurance Switch to HBF Get a recommendation New to health insurance",
-]
-
-# ── Offer keywords ───────────────────────────────────────────────
-OFFER_KEYWORDS = ["free", "weeks", "gift", "discount", "save", "offer ends", "%", "bonus"]
+LAST_OFFER_FILE = 'offer_files/hbf_last_offer.txt'
 
 # ── Logging ──────────────────────────────────────────────────────
 logging.basicConfig(
@@ -51,41 +27,10 @@ log = logging.getLogger(__name__)
 if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-
-# ── Helper: clean text ───────────────────────────────────────────
-def clean(text):
-    for phrase in BOILERPLATE:
-        text = text.replace(phrase, "")
-    return " ".join(text.split()).strip()
-
-
-# ── Helper: load last week's offer ──────────────────────────────
-def load_last_offer():
-    try:
-        if os.path.exists(LAST_OFFER_FILE):
-            with open(LAST_OFFER_FILE, "r", encoding="utf-8") as f:
-                return f.read().strip()
-    except Exception as e:
-        log.warning(f"Could not load last offer: {e}")
-    return None
-
-
-# ── Helper: save this week's offer ──────────────────────────────
-def save_current_offer(offer_text):
-    try:
-        with open(LAST_OFFER_FILE, "w", encoding="utf-8") as f:
-            f.write(offer_text)
-    except Exception as e:
-        log.warning(f"Could not save current offer: {e}")
-
-
 # ── Step 1: Scrape hero banner ───────────────────────────────────
 def scrape() -> str:
     try:
-        response = requests.get(URL, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
+        soup = fetch_url(HBF_URL)
         # Find the h1 tag — hero banner heading
         h1 = soup.find("h1")
         if not h1:
@@ -97,7 +42,7 @@ def scrape() -> str:
             log.warning("No parent found for h1")
             return None
 
-        text = clean(parent.get_text(separator=" ", strip=True))
+        text = clean_text(parent.get_text(separator=" ", strip=True), BOILERPLATE["HBF"])
         if not text:
             log.warning("No text found in hero banner")
             return None
@@ -110,7 +55,7 @@ def scrape() -> str:
         log.info(f"Offer detection: {offer_detection}")
 
         # ── Compare with last week ───────────────────────────────
-        last_offer = load_last_offer()
+        last_offer = load_last_offer(LAST_OFFER_FILE)
         if last_offer and last_offer == text:
             offer_status = "OFFER STATUS: UNCHANGED from last week"
             log.info("Offer unchanged from last week")
@@ -119,74 +64,37 @@ def scrape() -> str:
             log.info("Offer is new or changed this week")
 
         # Save current offer for next week's comparison
-        save_current_offer(text)
+        save_current_offer(text, LAST_OFFER_FILE)
 
-        run_date = datetime.now(timezone.utc).isoformat()
         content = (
             f"Source: {SOURCE} | Dataset: {DATASET} | "
-            f"Run Date: {run_date}\n\n"
+            f"Run Date: {fetch_run_date()}\n\n"
             f"{offer_detection}\n"
             f"{offer_status}\n\n"
             f"HBF Hero Banner:\n\n"
             f"{text}"
         )
-
         return content
 
     except Exception as e:
         log.error(f"Failed to scrape HBF hero banner: {e}")
         return None
 
-
-# ── Step 2: Build payload ────────────────────────────────────────
-def build_payload(content: str) -> dict:
-    return {
-        'source':     SOURCE,
-        'tier':       TIER,
-        'dataset':    DATASET,
-        'scraped_at': datetime.now(timezone.utc).isoformat(),
-        'url':        URL,
-        'content':    content,
-    }
-
-
-# ── Step 3: Save locally ─────────────────────────────────────────
-def save_locally(payload: dict) -> None:
-    date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    filename = f"{SOURCE}_{DATASET}_{date}.json"
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
-        log.info(f"Saved: {filename}")
-    except Exception as e:
-        log.error(f"Failed to save file: {e}")
-
-
-# ── Step 4: Upload to S3 (uncomment when ready) ──────────────────
-# def upload_to_s3(payload: dict) -> None:
-#     import boto3
-#     s3   = boto3.client('s3', region_name='ap-southeast-2')
-#     date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-#     key  = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{date}.json"
-#     s3.put_object(Bucket=BUCKET, Key=key,
-#                   Body=json.dumps(payload, ensure_ascii=False),
-#                   ContentType='application/json')
-#     log.info(f'Uploaded: s3://{BUCKET}/{key}')
-
-
-# ── Main ─────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    log.info("=" * 50)
-    log.info(f"Starting scrape: {SOURCE} / {DATASET}")
-    log.info("=" * 50)
-
+def run(local: Optional[str] = None) -> bool:
+    print(f"Scraping offers from competitor HBF from: \n  {HBF_URL} \n")
     content = scrape()
+    print(f"\nExtracted {len(content):,} characters of text.")
+    payload = build_payload(
+        content,
+        SOURCE,
+        DATASET.CUSTOMER_OFFERS.value,
+        fetch_run_date(),
+        TIER.MEDIBANK_SPECIFIC.value,
+        HBF_URL  
+    )
 
-    if not content:
-        log.warning("No content found — file will not be saved")
+    if local:
+        save_local(payload)
     else:
-        payload = build_payload(content)
-        save_locally(payload)
-        # swap to upload_to_s3(payload) when ready for S3
-
-    log.info("Scrape complete")
+        upload_to_s3(payload)
+    return True   

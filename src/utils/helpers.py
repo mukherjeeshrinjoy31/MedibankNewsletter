@@ -23,11 +23,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-def clean_text(text):
-    for phrase in BOILERPLATE['MEDIBANK']:
+def clean_text(text, boiler_plate):
+    for phrase in boiler_plate:
         text = text.replace(phrase, "")
     text = " ".join(text.split())
-    return text.strip()    
+    return text.strip()  
 
 def fetch_run_date():
     return datetime.now(timezone.utc).isoformat()
@@ -117,3 +117,24 @@ def fetch_url(url: str) -> Optional[BeautifulSoup]:
     except requests.RequestException as e:
         print(f"Error fetching {url}: {e}")
         return None
+    
+
+# ── Helper: load last week's offer ──────────────────────────────
+def load_last_offer(last_offer_file):
+    try:
+        if os.path.exists(last_offer_file):
+            with open(last_offer_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+    except Exception as e:
+        log.warning(f"Could not load last offer: {e}")
+    return None
+
+
+# ── Helper: save this week's offer ──────────────────────────────
+def save_current_offer(offer_text, path):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)   # ← FIX
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(offer_text)
+    except Exception as e:
+        log.warning(f"Could not save current offer: {e}")

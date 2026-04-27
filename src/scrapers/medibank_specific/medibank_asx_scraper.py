@@ -2,7 +2,7 @@ import time
 import logging
 from typing import Optional
 from datetime import datetime, timezone
-from ...commons.data import MEDIBANK_BASE_URL, MEDIBANK_NEWSROOM_TAG, ASX_MEDIBANK_RELEASES_URL
+from ...commons.data import BOILERPLATE, MEDIBANK_BASE_URL, MEDIBANK_NEWSROOM_TAG, ASX_MEDIBANK_RELEASES_URL
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
 from ...utils.helpers import build_payload, clean_text, fetch_article_links, fetch_cutoff_date, fetch_run_date, fetch_url, save_local, upload_to_s3
@@ -52,7 +52,7 @@ def scrape_article(article_url):
             p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)
         )
 
-        full_text = clean_text(f"{headline_text}. {body_text}")
+        full_text = clean_text(f"{headline_text}. {body_text}", BOILERPLATE['MEDIBANK'])
 
         if not full_text:
             log.warning(f"  Empty content after cleaning: {article_url}")
