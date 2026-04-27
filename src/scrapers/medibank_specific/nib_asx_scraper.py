@@ -57,7 +57,7 @@ def get_announcement_links():
                 try:
                     pub_date = datetime.strptime(date_text, "%d %B %Y")
                     pub_date = pub_date.replace(tzinfo=timezone.utc)
-                    if pub_date < fetch_cutoff_date(30):
+                    if pub_date < fetch_cutoff_date(7):
                         log.info(f"  Skipping (older than 7 days): {title}")
                         continue
                 except Exception as e:
