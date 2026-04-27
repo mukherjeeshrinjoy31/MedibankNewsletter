@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 # ---- Config ------------------------------------------------------
 TIER = "public-sentiment"
 DATASET = "news"
-BUCKET = "rmit-publicsentiment-demo-397348546955-ap-southeast-2-an"
+BUCKET = "p000268ds-medibank-intelligence"
 SOURCE = "abc"
 URL = "https://www.abc.net.au/"
 
@@ -256,7 +256,7 @@ def build_payload(content: list[dict]) -> dict:
 
 
 def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="ap-southeast-2")
+    s3 = boto3.client("s3", region_name="us-east-1")
     key = (
         f"raw/{payload['tier']}/{payload['source']}_"
         f"{payload['dataset']}_"
