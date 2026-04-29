@@ -20,10 +20,13 @@ def strip_html(raw: str) -> str:
     stripper.feed(raw or "")
     return stripper.get_data()
 
-def parse_date(date_str: str) -> Optional[datetime]:
+def parse_date(date_str: str, date_formats: Optional[List[str]] = None) -> Optional[datetime]:
     if not date_str:
         return None
-    for date_format in DATE_FORMATS:
+
+    formats = date_formats if date_formats is not None else DATE_FORMATS
+
+    for date_format in formats:
         try:
             dt = datetime.strptime(date_str.strip(), date_format)
             if dt.tzinfo is None:
@@ -31,4 +34,5 @@ def parse_date(date_str: str) -> Optional[datetime]:
             return dt
         except ValueError:
             continue
+
     return None

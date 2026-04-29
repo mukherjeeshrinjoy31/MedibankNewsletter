@@ -51,7 +51,7 @@ def fetch_feed(feed_url: str) -> list[dict]:
 
         pub_date = parse_date(pub_date_str)
 
-        if pub_date and pub_date < fetch_cutoff_date(30):
+        if pub_date and pub_date < fetch_cutoff_date(7):
             continue
 
         if not matches_keywords(f"{title} {description}"):
@@ -97,7 +97,6 @@ def scrape_source(source_id: str, source_config: dict) -> str:
     return " \n ".join(lines)
 
 def run(local: Optional[str] = None) -> bool:
-    any_uploaded = False
     for source_id, source_cfg in NEWS_SOURCES.items():
         content = scrape_source(source_id, source_cfg)
         if not content:
@@ -117,7 +116,4 @@ def run(local: Optional[str] = None) -> bool:
             save_local(payload)
         else:
             upload_to_s3(payload)
-        any_uploaded = True
-
-    return any_uploaded
 # run "python news_scrape.py --local data" to save locally to a "data" directory instead of uploading to S3 to view the scraped content

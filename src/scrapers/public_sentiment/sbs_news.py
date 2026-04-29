@@ -1,8 +1,6 @@
-import json
 import re
 import argparse
 from typing import Optional
-import boto3
 from datetime import datetime, timedelta, timezone
 from ...commons.data import NEWS_BOILERPLATE_PATTERNS, NEWS_URLS, SBS_NEWS_URL
 from ...commons.dataset import DATASET

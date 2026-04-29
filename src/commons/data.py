@@ -3,7 +3,8 @@
 # ============================
 
 ABC_NEWS_URL                            = "https://www.abc.net.au/"
-AMA_SOURCE_URL                          = "https://www.ama.com.au/articles/ama-private-health-insurance-report-card-2025"
+AMA_SOURCE_URL                          = "https://www.ama.com.au/"
+AMA_REPORT_URL                          = "https://www.ama.com.au/advocacy-policy?f%5B0%5D=type%3A51" # AMA report card page
 ARTICLES_SEARCH_URL                     = "https://www.choice.com.au/?s=Medibank&tab=articles"
 ASX_MEDIBANK_RELEASES_URL               = "https://www.medibank.com.au/livebetter/newsroom/classification/asx-releases"
 ASX_NIB_ANNOUNCEMENTS_URL               = "https://www.nib.com.au/shareholders/announcements"
@@ -190,25 +191,25 @@ NEWS_SOURCES = {
     "abc": {
         "url": "https://www.abc.net.au/",
         "feeds": [
-            "https://www.abc.net.au/news/feed/45910/rss.xml",
-            "https://www.abc.net.au/news/feed/5470430/rss.xml",
-            "https://www.abc.net.au/news/feed/7112600/rss.xml",
-            "https://www.abc.net.au/news/feed/9167776/rss.xml",
+            "https://www.abc.net.au/news/feed/5470430/rss.xml", # abc top stories
+            "https://www.abc.net.au/news/feed/45910/rss.xml", # abc top stories
+            "https://www.abc.net.au/news/feed/7112600/rss.xml", # abc health
+            "https://www.abc.net.au/news/feed/9167776/rss.xml" # abc health
         ],
     },
     "sbs": {
         "url": "https://www.sbs.com.au/news",
         "feeds": [
-            "https://www.sbs.com.au/feed/news/podcast-rss/headlines-on-health",
-            "https://www.sbs.com.au/news/feed",
+            "https://www.sbs.com.au/news/feed", # sbs top stories,
+            "https://www.sbs.com.au/feed/news/podcast-rss/headlines-on-health" # sbs health podcast
         ],
     },
     "theguardian": {
         "url": "https://www.theguardian.com/au",
         "feeds": [
-            "https://www.theguardian.com/au/rss",
+            "https://www.theguardian.com/au/rss" # the guardian top stories
         ],
-    },
+    }
 }
 
 # ============================
