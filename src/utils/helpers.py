@@ -1,4 +1,4 @@
-import shutil
+import re
 
 import boto3
 import json
@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
-from ..commons.data import HEADERS, BOILERPLATE
+from ..commons.data import HEADERS, NEWS_KEYWORDS
 
 # ── Logging ──────────────────────────────────────────────────────
 logging.basicConfig(
@@ -138,3 +138,36 @@ def save_current_offer(offer_text, path):
             f.write(offer_text)
     except Exception as e:
         log.warning(f"Could not save current offer: {e}")
+
+def matches_keywords(text: str) -> bool:
+    text = text.lower()
+    groups_matched = sum(any(kw in text for kw in kws) for kws in NEWS_KEYWORDS.values())
+    return groups_matched >= 1 # match either phi or health-tech (not necessarily both)
+
+
+def is_boilerplate(text: str, boilerplate_patterns: list) -> bool:
+    t = text.lower().strip()
+    return any(re.match(pat, t) for pat in boilerplate_patterns)
+
+def build_content_list(articles: list[dict]) -> list[dict]:
+    return [
+        {
+            "index": i,
+            "headline": article["headline"],
+            "published": article["pub_date"] or "unknown",
+            "source": article["url"],
+            "body": article["body"],
+        }
+        for i, article in enumerate(articles, start=1)
+    ]
+
+def parse_date(text: str) -> datetime | None:
+    match = re.search(r"(\d{1,2})[\s\n]+([A-Za-z]+)[\s\n]+(\d{4})", text)
+    if match:
+        raw = f"{match.group(1)} {match.group(2)} {match.group(3)}"
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+    return None

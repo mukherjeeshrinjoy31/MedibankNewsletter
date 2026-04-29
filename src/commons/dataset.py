@@ -11,3 +11,4 @@ class DATASET(Enum):
     ASX_RELEASES = "asx_releases"
     MEDIA_RELEASES = "media_releases"
     CUSTOMER_OFFERS = "customer_offers"
+    DEALS = "deals"

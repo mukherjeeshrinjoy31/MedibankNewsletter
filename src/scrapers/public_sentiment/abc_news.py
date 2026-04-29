@@ -1,75 +1,21 @@
 import json
 import re
-import argparse
-import boto3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from typing import Optional
+from ...commons.dataset import DATASET
+from ...commons.tiers import TIER
 from playwright.sync_api import sync_playwright
+from ...utils.helpers import build_content_list, build_payload, fetch_cutoff_date, fetch_run_date, is_boilerplate, matches_keywords, save_local, upload_to_s3
+
+from ...commons.data import ABC_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_KEYWORDS, NEWS_URLS
 
 # ---- Config ------------------------------------------------------
-TIER = "public-sentiment"
-DATASET = "news"
-BUCKET = "p000268ds-medibank-intelligence"
 SOURCE = "abc"
-URL = "https://www.abc.net.au/"
-
-# How far back to look (match weekly run cadence with some overlap)
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
-
-# Pages to scan for article links
-ABC_URLS = [
-    "https://www.abc.net.au/news/health",
-    "https://www.abc.net.au/news/",
-    "https://www.abc.net.au/news/australia/",
-    "https://www.abc.net.au/news/search/?query=health+australia",
-    "https://www.abc.net.au/news/search/?query=private+health+insurance"
-]
-
 MAX_ARTICLES = 40  
 SCROLL_PASSES = 4 
-
-ARTICLE_URL_PATTERN = re.compile(
-    r"^/news/(?:.+/)?\d{4}-\d{2}-\d{2}/.+/\d+$"
-)
-
-KEYWORDS = {
-    "phi": [
-        "medibank", "bupa", "nib", "hcf", "hbf",
-        "private health insurance", "health fund",
-        "health cover", "health insurer", "private health"
-    ],
-    "health_tech": [
-        "health technology", "digital health", "health ai",
-        "medical ai", "health innovation", "medtech",
-        "telehealth", "health data", "wearable health",
-        "health automation", "clinical ai", "precision medicine",
-    ],
-}
-
-BOILERPLATE_PATTERNS = [
-    r"^topic:?$",
-    r"^this site is protected by recaptcha",
-    r"^follow @abc",
-    r"^\(.+:.+\)$",
-    r"^analysis by ",
-    r"^live$",
-    r"^[a-z ]+:$",
-]
+ARTICLE_URL_PATTERN = re.compile(r"^/news/(?:.+/)?\d{4}-\d{2}-\d{2}/.+/\d+$")
 
 # ---- Helpers ------------------------------------------------------
-
-def matches_keywords(text: str) -> bool:
-    text = text.lower()
-    groups_matched = sum(
-        any(kw in text for kw in kws) for kws in KEYWORDS.values()
-    )
-    return groups_matched >= 1 # match either phi or health-tech (not necessarily both)
-
-
-def is_boilerplate(text: str) -> bool:
-    t = text.lower().strip()
-    return any(re.match(pat, t) for pat in BOILERPLATE_PATTERNS)
-
-
 def parse_abc_date(page) -> datetime | None:
     try:
         raw = page.eval_on_selector_all(
@@ -140,7 +86,7 @@ def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
             "article p",
             "els => els.map(el => el.innerText.trim()).filter(t => t.length > 30)"
         )
-        paragraphs = [p for p in paragraphs if not is_boilerplate(p)]
+        paragraphs = [p for p in paragraphs if not is_boilerplate(p, NEWS_BOILERPLATE_PATTERNS["ABC"])]
         body = "\n\n".join(paragraphs) if paragraphs else "(Could not extract body)"
     except Exception as exc:
         body = f"(Error extracting body: {exc})"
@@ -156,7 +102,7 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> list[dict]:
         listing_page = browser.new_page()
 
         print("\nCollecting article links …\n")
-        for source_url in ABC_URLS:
+        for source_url in NEWS_URLS["ABC"]:
             links = collect_links(listing_page, source_url)
             print(f"  Got {len(links)} links from {source_url}")
             all_links.extend(links)
@@ -172,8 +118,6 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> list[dict]:
 
             if href.startswith("https://www.abc.net.au"):
                 href = href[len("https://www.abc.net.au"):]
-
-
             if not ARTICLE_URL_PATTERN.match(href):
                 rejected["url_pattern"] += 1
                 continue
@@ -213,7 +157,7 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> list[dict]:
             article["pub_date"] = pub_date
 
             # skip articles outside our look-back window
-            if pub_date and pub_date < CUTOFF_DATE:
+            if pub_date and pub_date < fetch_cutoff_date(7):
                 print(f"    → Skipped (too old: {pub_date.date()})")
                 continue
 
@@ -223,96 +167,30 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> list[dict]:
                 article["pub_date"] = None   # unknown date – keep anyway
 
             kept.append(article)
-
         browser.close()
-
     print(f"\nArticles kept after date filter: {len(kept)}")
     return kept
 
-
-# ---- Output Helpers ---------------------------------------
-def build_content_list(articles: list[dict]) -> list[dict]:
-    return [
-        {
-            "index": i,
-            "headline": article["headline"],
-            "published": article["pub_date"] or "unknown",
-            "source": article["url"],
-            "body": article["body"],
-        }
-        for i, article in enumerate(articles, start=1)
-    ]
-
-
-def build_payload(content: list[dict]) -> dict:
-    return {
-        "source": SOURCE,
-        "tier": TIER,
-        "dataset": DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url": URL,
-        "content": content,
-    }
-
-
-def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="us-east-1")
-    key = (
-        f"raw/{payload['tier']}/{payload['source']}_"
-        f"{payload['dataset']}_"
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
-    )
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType="application/json",
-    )
-    print(f"Uploaded: s3://{BUCKET}/{key}")
-
-
-def save_local(payload: dict, directory: str = ".") -> None:
-    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{payload['source']}_{run_date}.json"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"Saved locally: {path}")
-
-
-# ---- Main ---------------------------------------------------------
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Playwright-based ABC News scraper — PHI / health-tech"
-    )
-    parser.add_argument(
-        "--local",
-        metavar="DIR",
-        nargs="?",
-        const=".",
-        help="Save JSON locally to DIR instead of uploading to S3 (default: current dir)",
-    )
-    parser.add_argument(
-        "--max",
-        type=int,
-        default=MAX_ARTICLES,
-        help=f"Max articles to fetch (default: {MAX_ARTICLES})",
-    )
-    args = parser.parse_args()
-
-    articles = scrape_abc_playwright(max_articles=args.max)
-
+def run(local: Optional[str] = None) -> bool:
+    print("Starting Playwright-based ABC News scraper — PHI / health-tech")
+    articles = scrape_abc_playwright(MAX_ARTICLES)
     if not articles:
         print("No matching articles found.")
     else:
-        run_date = datetime.now(timezone.utc).isoformat()
         content = build_content_list(articles)  
-        payload = build_payload(content)
+    print(f"\nExtracted {len(content):,} characters of text.")
+    payload = build_payload(
+        content,
+        SOURCE,
+        DATASET.NEWS.value,
+        fetch_run_date(),
+        TIER.PUBLIC_SENTIMENT.value,
+        ABC_NEWS_URL
+    )
 
-        if args.local:
-            save_local(payload, args.local)
-        else:
-            upload_to_s3(payload)
+    if local:
+        save_local(payload)
+    else:
+        upload_to_s3(payload)
 
-        print(f"\nDone. {len(articles)} article(s) processed.")
-
-# run "python news_articles_playwright.py --local data" to save locally
+# run "python ama.py --local" to save locally to a "data" directory instead of uploading to S3

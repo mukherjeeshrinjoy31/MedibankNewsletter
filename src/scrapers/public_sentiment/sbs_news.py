@@ -1,86 +1,20 @@
 import json
 import re
 import argparse
+from typing import Optional
 import boto3
 from datetime import datetime, timedelta, timezone
+from ...commons.data import NEWS_BOILERPLATE_PATTERNS, NEWS_URLS, SBS_NEWS_URL
+from ...commons.dataset import DATASET
+from ...commons.tiers import TIER
 from playwright.sync_api import sync_playwright
+from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_run_date, is_boilerplate, matches_keywords, parse_date, save_local, upload_to_s3
 
 # ---- Config ------------------------------------------------------
-TIER = "public-sentiment"
-DATASET = "news"
-BUCKET = "p000268ds-medibank-intelligence"
 SOURCE = "sbs"
-URL = "https://www.sbs.com.au/news"
-
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
-
-# Pages to scan for article links
-SBS_URLS = [
-    "https://www.sbs.com.au/news/collection/health-and-wellbeing",
-    "https://www.sbs.com.au/news/tag/subject/health",
-    "https://www.sbs.com.au/news/collection/just-in-articles",
-    "https://www.sbs.com.au/news/tag/section/life",
-    "https://www.sbs.com.au/search?query=private+health+insurance&sort=date&filter=news"
-]
-
 MAX_ARTICLES = 20
 SCROLL_PASSES = 4
-
-ARTICLE_URL_PATTERN = re.compile(
-    r"^/news/article/[a-z0-9][a-z0-9\-]+/[a-z0-9]+$"
-)
-
-KEYWORDS = {
-    "phi": [
-        "medibank", "bupa", "nib", "hcf", "hbf",
-        "private health insurance", "health fund",
-        "health cover", "health insurer", "private health"
-    ],
-    "health_tech": [
-        "health technology", "digital health", "health ai",
-        "medical ai", "health innovation", "medtech",
-        "telehealth", "health data", "wearable health",
-        "health automation", "clinical ai", "precision medicine",
-    ],
-}
-
-BOILERPLATE_PATTERNS = [
-    r"^sign up now",
-    r"^sbs on the money",
-    r"^sbs news in easy english",
-    r"^your daily ten minute",
-    r"^get the latest with our",
-    r"^live stream",
-    r"^follow the latest",
-    r"^from breaking headlines",
-    r"^[a-z ]+:$",
-    r"^\(.+:.+\)$",
-]
-
-# ---- Helpers ------------------------------------------------------
-def matches_keywords(text: str) -> bool:
-    text = text.lower()
-    groups_matched = sum(
-        any(kw in text for kw in kws) for kws in KEYWORDS.values()
-    )
-    return groups_matched >= 1
-
-
-def is_boilerplate(text: str) -> bool:
-    t = text.lower().strip()
-    return any(re.match(pat, t) for pat in BOILERPLATE_PATTERNS)
-
-def parse_date(text: str) -> datetime | None:
-    match = re.search(r"(\d{1,2})[\s\n]+([A-Za-z]+)[\s\n]+(\d{4})", text)
-    if match:
-        raw = f"{match.group(1)} {match.group(2)} {match.group(3)}"
-        for fmt in ("%d %b %Y", "%d %B %Y"):
-            try:
-                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
-    return None
-
+ARTICLE_URL_PATTERN = re.compile(r"^/news/article/[a-z0-9][a-z0-9\-]+/[a-z0-9]+$")
 
 # ---- Scraping Logic ------------------------------------------------------
 def collect_links_paginated(page, url: str, max_pages: int = 2, cutoff: datetime = None) -> list[dict]:
@@ -258,7 +192,7 @@ def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
             "article p",
             "els => els.map(el => el.innerText.trim()).filter(t => t.length > 30)"
         )
-        paragraphs = [p for p in paragraphs if not is_boilerplate(p)]
+        paragraphs = [p for p in paragraphs if not is_boilerplate(p, NEWS_BOILERPLATE_PATTERNS["SBS"])]
         body = "\n\n".join(paragraphs) if paragraphs else "(Could not extract body)"
     except Exception as exc:
         body = f"(Error extracting body: {exc})"
@@ -274,8 +208,8 @@ def scrape_sbs(max_articles: int = MAX_ARTICLES) -> list[dict]:
         listing_page = browser.new_page()
 
         print("\nCollecting article links …\n")
-        for source_url in SBS_URLS:
-            links = collect_links_paginated(listing_page, source_url, max_pages=2, cutoff=CUTOFF_DATE)
+        for source_url in NEWS_URLS["SBS"]:
+            links = collect_links_paginated(listing_page, source_url, max_pages=2, cutoff= fetch_cutoff_date(7))
             print(f"  Got {len(links)} links from {source_url}")
             all_links.extend(links)
 
@@ -333,7 +267,7 @@ def scrape_sbs(max_articles: int = MAX_ARTICLES) -> list[dict]:
             if pub_date is None:
                 print(f"    → Skipped (could not determine date)")
                 continue
-            if pub_date < CUTOFF_DATE:
+            if pub_date < fetch_cutoff_date(7):
                 print(f"    → Skipped (too old: {pub_date.date()})")
                 continue
 
@@ -359,42 +293,6 @@ def build_content_list(articles: list[dict]) -> list[dict]:
         }
         for i, article in enumerate(articles, start=1)
     ]
-
-
-def build_payload(content: list[dict]) -> dict:
-    return {
-        "source": SOURCE,
-        "tier": TIER,
-        "dataset": DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url": URL,
-        "content": content,
-    }
-
-
-def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="us-east-1")
-    key = (
-        f"raw/{payload['tier']}/{payload['source']}_"
-        f"{payload['dataset']}_"
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
-    )
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType="application/json",
-    )
-    print(f"Uploaded: s3://{BUCKET}/{key}")
-
-
-def save_local(payload: dict, directory: str = ".") -> None:
-    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{payload['source']}_{run_date}.json"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"Saved locally: {path}")
-
 
 # ---- Main ----------------------------------------------------------------
 
@@ -431,3 +329,25 @@ if __name__ == "__main__":
             upload_to_s3(payload)
 
         print(f"\nDone. {len(articles)} article(s) processed.")
+
+def run(local: Optional[str] = None) -> bool:
+    print("Starting Playwright-based SBS News scraper — PHI / health-tech")
+    articles = scrape_sbs(MAX_ARTICLES)
+    if not articles:
+        print("No matching articles found.")
+    else:
+        content = build_content_list(articles)  
+    print(f"\nExtracted {len(content):,} characters of text.")
+    payload = build_payload(
+        content,
+        SOURCE,
+        DATASET.NEWS.value,
+        fetch_run_date(),
+        TIER.PUBLIC_SENTIMENT.value,
+        SBS_NEWS_URL
+    )
+
+    if local:
+        save_local(payload)
+    else:
+        upload_to_s3(payload)

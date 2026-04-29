@@ -2,15 +2,87 @@
 # Global Constants (Sorted)
 # ============================
 
+ABC_NEWS_URL                            = "https://www.abc.net.au/"
 AMA_SOURCE_URL                          = "https://www.ama.com.au/articles/ama-private-health-insurance-report-card-2025"
 ARTICLES_SEARCH_URL                     = "https://www.choice.com.au/?s=Medibank&tab=articles"
 ASX_MEDIBANK_RELEASES_URL               = "https://www.medibank.com.au/livebetter/newsroom/classification/asx-releases"
 ASX_NIB_ANNOUNCEMENTS_URL               = "https://www.nib.com.au/shareholders/announcements"
+GUARDIAN_NEWS_URL                       = "https://www.theguardian.com/au"
 HBF_URL                                 = "https://www.hbf.com.au"
 HCF_URL                                 = 'https://www.hcf.com.au'
 MEDIBANK_BASE_URL                       = "https://www.medibank.com.au"
 MEDIBANK_SPECIFIC_MEDIA_RELEASES_URL    = "https://www.medibank.com.au/livebetter/newsroom/classification/media-releases"
+OZBARGAIN_URL                           = "https://www.ozbargain.com.au"
+RSS_FEED_URL                            = "https://www.ozbargain.com.au/deals/medibank.com.au/feed"
 YFINANCE_URL                            = "https://au.finance.yahoo.com/quote/ASX.AX/"
+SBS_NEWS_URL                            = "https://www.sbs.com.au/news"
+
+NEWS_URLS = {
+    "ABC" : [
+        "https://www.abc.net.au/news/health",
+        "https://www.abc.net.au/news/",
+        "https://www.abc.net.au/news/australia/",
+        "https://www.abc.net.au/news/search/?query=health+australia",
+        "https://www.abc.net.au/news/search/?query=private+health+insurance"
+    ],
+    "SBS" : [
+        "https://www.sbs.com.au/news/collection/health-and-wellbeing",
+        "https://www.sbs.com.au/news/tag/subject/health",
+        "https://www.sbs.com.au/news/collection/just-in-articles",
+        "https://www.sbs.com.au/news/tag/section/life",
+        "https://www.sbs.com.au/search?query=private+health+insurance&sort=date&filter=news"
+    ],
+    "GUARDIAN" : [
+        "https://www.theguardian.com/australia-news/health",
+        "https://www.theguardian.com/australia-news",
+        "https://www.theguardian.com/au/lifeandstyle",
+    ]
+}
+
+
+NEWS_BOILERPLATE_PATTERNS = {
+    "ABC" : [     
+        r"^topic:?$",
+        r"^this site is protected by recaptcha",
+        r"^follow @abc",
+        r"^\(.+:.+\)$",
+        r"^analysis by ",
+        r"^live$",
+        r"^[a-z ]+:$",
+    ],
+    "SBS" : [
+        r"^sign up now",
+        r"^sbs on the money",
+        r"^sbs news in easy english",
+        r"^your daily ten minute",
+        r"^get the latest with our",
+        r"^live stream",
+        r"^follow the latest",
+        r"^from breaking headlines",
+        r"^[a-z ]+:$",
+        r"^\(.+:.+\)$",
+    ],
+    "GUARDIAN" : [
+        r"^sign in",
+        r"^subscribe",
+        r"^support the guardian",
+        r"^print this page",
+        r"^reuse this content",
+        r"^\(.+:.+\)$",
+        r"^[a-z ]+:$",
+        r"^topics$",
+        r"^more on this story",
+    ]
+}
+
+EXCLUDED_SECTIONS = {
+    "live",       # live blogs
+    "video",      # video pages
+    "audio",      # podcasts
+    "picture",    # picture galleries
+    "morning-mail-newsletter",
+    "afternoon-update-newsletter",
+}
 
 MEDIBANK_NEWSROOM_TAG = "/livebetter/newsroom/post/"
 INSURANCE_PROVIDERS = "medibank"
@@ -144,30 +216,16 @@ NEWS_SOURCES = {
 # ============================
 
 NEWS_KEYWORDS = {
-    "health_tech": [
-        "clinical ai",
-        "digital health",
-        "health ai",
-        "health automation",
-        "health data",
-        "health innovation",
-        "health technology",
-        "medical ai",
-        "medtech",
-        "precision medicine",
-        "telehealth",
-        "wearable health",
-    ],
     "phi": [
-        "bupa",
-        "hbf",
-        "hcf",
-        "health cover",
-        "health fund",
-        "health insurer",
-        "medibank",
-        "nib",
-        "private health insurance",
+        "medibank", "bupa", "nib", "hcf", "hbf",
+        "private health insurance", "health fund",
+        "health cover", "health insurer", "private health"
+    ],
+    "health_tech": [
+        "health technology", "digital health", "health ai",
+        "medical ai", "health innovation", "medtech",
+        "telehealth", "health data", "wearable health",
+        "health automation", "clinical ai", "precision medicine",
     ],
 }
 
@@ -196,6 +254,7 @@ DATE_FORMATS = [
     "%a, %d %b %Y %H:%M:%S %Z",
     "%a, %d %b %Y %H:%M:%S %z",
 ]
+
 
 # ============================
 # Tickers (Sorted)

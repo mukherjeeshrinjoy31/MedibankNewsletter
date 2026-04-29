@@ -1,25 +1,19 @@
-import json
-import boto3
 import argparse
+from typing import Optional
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 import re
 
+from commons.dataset import DATASET
+from commons.tiers import TIER
+
+from ...commons.data import DATE_FORMATS, HEADERS, OZBARGAIN_URL, RSS_FEED_URL
+from ...utils.helpers import build_payload, fetch_run_date, fetch_cutoff_date, save_local, upload_to_s3
+
 # ---- Config ------------------------------------------------------
 SOURCE = "ozbargain"
-DATASET = "deals"
-TIER   = "public-sentiment"
-URL = "https://www.ozbargain.com.au"
-BUCKET = "p000268ds-medibank-intelligence"
-
-RSS_FEED_URL = "https://www.ozbargain.com.au/deals/medibank.com.au/feed"
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=30)
-
-HEADERS = {"User-Agent": "Mozilla/5.0"}
-
-DATE_FORMAT = "%a, %d %b %Y %H:%M:%S %z"
 
 # ---- Helper Functions ------------------------------------------------------
 class MLStripper(HTMLParser):
@@ -43,7 +37,7 @@ def parse_date(date_str: str) -> datetime | None:
         return None
     
     try:
-        return datetime.strptime(date_str.strip(), DATE_FORMAT)
+        return datetime.strptime(date_str.strip(), DATE_FORMATS[3])
     except ValueError:
         pass
     
@@ -54,7 +48,7 @@ def parse_date(date_str: str) -> datetime | None:
     print(f"  Warning: unrecognised date format: {date_str!r}")
     return None
 
-NS = {"ozb": "https://www.ozbargain.com.au"}
+NS = {"ozb": OZBARGAIN_URL}
 
 def _ozb_attr(item: ET.Element, tag: str, attr: str) -> str | None:
     el = item.find(f"ozb:{tag}", NS)
@@ -131,7 +125,7 @@ def fetch_feed(feed_url: str) -> list[dict]:
         expiry_date = parse_date(expiry_str) if expiry_str else None
 
         pub_date = parse_date(pub_date_str)
-        within_cutoff = pub_date and pub_date >= CUTOFF_DATE
+        within_cutoff = pub_date and pub_date >= fetch_cutoff_date(30)
         still_active = is_active(expiry_date)
 
 
@@ -166,35 +160,6 @@ def fetch_feed(feed_url: str) -> list[dict]:
  
     return deals
 
-# ---- Output Helpers ------------------------------------------------------
-def build_payload(content: list[dict]) -> dict:
-    return {
-        "source": SOURCE,
-        "tier": TIER,
-        "dataset": DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url": URL,
-        "content": content
-    }
-
-def upload_to_s3(payload: dict) -> None:
-    s3  = boto3.client("s3", region_name="us-east-1")
-    key = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
-    s3.put_object(
-        Bucket=BUCKET, 
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType='application/json'
-    )
-    print(f"Uploaded: s3://{BUCKET}/{key}")
-
-def save_local(payload: dict, directory: str = ".") -> None:
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{payload['source']}_{date}.json"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"Saved locally: {path}")
-
 # ---- Main ------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OzBargain Medibank Deals RSS Scraper")
@@ -219,3 +184,24 @@ if __name__ == "__main__":
         save_local(payload, args.local)
     else:
         upload_to_s3(payload)
+
+def run(local: Optional[str] = None) -> bool:
+    print(f"Scraping Medibank deals (OzBargain RSS feed) from: \n  {OZBARGAIN_URL} \n")
+    content = fetch_feed()
+    print(f"\nExtracted {len(content):,} characters of text.")
+    payload = build_payload(
+        content,
+        SOURCE,
+        DATASET.DEALS.value,
+        fetch_run_date(),
+        TIER.PUBLIC_SENTIMENT.value,
+        OZBARGAIN_URL
+    )
+
+    if local:
+        save_local(payload)
+    else:
+        upload_to_s3(payload)
+    return True
+
+# run "python ama.py --local" to save locally to a "data" directory instead of uploading to S3

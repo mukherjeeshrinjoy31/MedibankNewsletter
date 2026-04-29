@@ -1,72 +1,26 @@
 import json
 import re
 import argparse
+from typing import Optional
 import boto3
 from datetime import datetime, timedelta, timezone
+from commons.data import EXCLUDED_SECTIONS, GUARDIAN_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_URLS
+from commons.dataset import DATASET
+from commons.tiers import TIER
 from playwright.sync_api import sync_playwright
+from utils.helpers import build_content_list, build_payload, fetch_cutoff_date, fetch_run_date, is_boilerplate, matches_keywords, save_local, upload_to_s3
 
 # ---- Config ------------------------------------------------------
-TIER = "public-sentiment"
-DATASET = "news"
-BUCKET = "p000268ds-medibank-intelligence"
 SOURCE = "guardian"
-URL = "https://www.theguardian.com/au"
-
-CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
-
-GUARDIAN_URLS = [
-    "https://www.theguardian.com/australia-news/health",
-    "https://www.theguardian.com/australia-news",
-    "https://www.theguardian.com/au/lifeandstyle",
-]
-
 MAX_ARTICLES = 20
 SCROLL_PASSES = 4
 
 # Matches Guardian article URL paths: /section/.../2026/apr/27/slug
 # Slug must end with word chars — rules out /all, #fragment etc.
-ARTICLE_URL_PATTERN = re.compile(
-    r"^/(?:[a-z0-9\-]+/)*\d{4}/[a-z]{3}/\d{2}/[a-z0-9][a-z0-9\-]*$"
-)
-
-# Section slugs that are never editorial articles
-EXCLUDED_SECTIONS = {
-    "live",       # live blogs
-    "video",      # video pages
-    "audio",      # podcasts
-    "picture",    # picture galleries
-    "morning-mail-newsletter",
-    "afternoon-update-newsletter",
-}
+ARTICLE_URL_PATTERN = re.compile(r"^/(?:[a-z0-9\-]+/)*\d{4}/[a-z]{3}/\d{2}/[a-z0-9][a-z0-9\-]*$")
 
 # Extracts /2026/apr/27/ from a Guardian URL path
 _URL_DATE_RE = re.compile(r"/(\d{4})/([a-z]{3})/(\d{2})/")
-
-KEYWORDS = {
-    "phi": [
-        "medibank", "bupa", "nib", "hcf", "hbf",
-        "private health insurance", "health fund",
-        "health cover", "health insurer", "private health",
-    ],
-    "health_tech": [
-        "health technology", "digital health", "health ai",
-        "medical ai", "health innovation", "medtech",
-        "telehealth", "health data", "wearable health",
-        "health automation", "clinical ai", "precision medicine",
-    ],
-}
-
-BOILERPLATE_PATTERNS = [
-    r"^sign in",
-    r"^subscribe",
-    r"^support the guardian",
-    r"^print this page",
-    r"^reuse this content",
-    r"^\(.+:.+\)$",
-    r"^[a-z ]+:$",
-    r"^topics$",
-    r"^more on this story",
-]
 
 # JS that collects article card data in one round-trip.
 # Starts from <a href*='/202'> anchors, deduplicates by href,
@@ -123,18 +77,7 @@ elements => {
 }
 """
 
-
 # ---- Helpers ------------------------------------------------------
-def matches_keywords(text: str) -> bool:
-    text = text.lower()
-    return any(any(kw in text for kw in kws) for kws in KEYWORDS.values())
-
-
-def is_boilerplate(text: str) -> bool:
-    t = text.lower().strip()
-    return any(re.match(pat, t) for pat in BOILERPLATE_PATTERNS)
-
-
 def is_excluded_section(href: str) -> bool:
     parts = href.strip("/").split("/")
     return any(seg in EXCLUDED_SECTIONS for seg in parts)
@@ -295,7 +238,7 @@ def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
             "article p",
             "els => els.map(el => el.innerText.trim()).filter(t => t.length > 30)"
         )
-        paragraphs = [p for p in paragraphs if not is_boilerplate(p)]
+        paragraphs = [p for p in paragraphs if not is_boilerplate(p, NEWS_BOILERPLATE_PATTERNS["GUARDIAN"])]
         body = "\n\n".join(paragraphs) if paragraphs else "(Could not extract body)"
     except Exception as exc:
         body = f"(Error extracting body: {exc})"
@@ -311,9 +254,9 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
         listing_page = browser.new_page()
 
         print("\nCollecting article links …\n")
-        for source_url in GUARDIAN_URLS:
+        for source_url in NEWS_URLS["GUARDIAN"]:
             links = collect_links_paginated(
-                listing_page, source_url, max_pages=10, cutoff=CUTOFF_DATE
+                listing_page, source_url, max_pages=10, cutoff=fetch_cutoff_date(7)
             )
             print(f"  → {len(links)} links from {source_url}\n")
             all_links.extend(links)
@@ -342,7 +285,7 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
                 continue
             if pub_date_str:
                 try:
-                    if datetime.fromisoformat(pub_date_str) < CUTOFF_DATE:
+                    if datetime.fromisoformat(pub_date_str) < fetch_cutoff_date(7):
                         rejected["too_old"] += 1
                         continue
                 except Exception:
@@ -380,7 +323,7 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
             if pub_date is None:
                 print(f"    → Skipped (could not determine date)")
                 continue
-            if pub_date < CUTOFF_DATE:
+            if pub_date < fetch_cutoff_date(7):
                 print(f"    → Skipped (too old: {pub_date.date()})")
                 continue
 
@@ -391,56 +334,6 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
 
     print(f"\nArticles kept: {len(kept)}")
     return kept
-
-
-# ---- Output Helpers ------------------------------------------------------
-def build_content_list(articles: list[dict]) -> list[dict]:
-    return [
-        {
-            "index": i,
-            "headline": a["headline"],
-            "published": a["pub_date"] or "unknown",
-            "source": a["url"],
-            "body": a["body"],
-        }
-        for i, a in enumerate(articles, start=1)
-    ]
-
-
-def build_payload(content: list[dict]) -> dict:
-    return {
-        "source": SOURCE,
-        "tier": TIER,
-        "dataset": DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url": URL,
-        "content": content,
-    }
-
-
-def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="us-east-1")
-    key = (
-        f"raw/{payload['tier']}/{payload['source']}_"
-        f"{payload['dataset']}_"
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
-    )
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType="application/json",
-    )
-    print(f"Uploaded: s3://{BUCKET}/{key}")
-
-
-def save_local(payload: dict, directory: str = ".") -> None:
-    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{payload['source']}_{run_date}.json"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"Saved locally: {path}")
-
 
 # ---- Main ----------------------------------------------------------------
 if __name__ == "__main__":
@@ -476,3 +369,26 @@ if __name__ == "__main__":
             upload_to_s3(payload)
 
         print(f"\nDone. {len(articles)} article(s) processed.")
+
+        
+def run(local: Optional[str] = None) -> bool:
+    print("Starting Playwright-based Guardian AU scraper — PHI / health-tech")
+    articles = scrape_guardian(MAX_ARTICLES)
+    if not articles:
+        print("No matching articles found.")
+    else:
+        content = build_content_list(articles)  
+    print(f"\nExtracted {len(content):,} characters of text.")
+    payload = build_payload(
+        content,
+        SOURCE,
+        DATASET.NEWS.value,
+        fetch_run_date(),
+        TIER.PUBLIC_SENTIMENT.value,
+        GUARDIAN_NEWS_URL
+    )
+
+    if local:
+        save_local(payload)
+    else:
+        upload_to_s3(payload)        
