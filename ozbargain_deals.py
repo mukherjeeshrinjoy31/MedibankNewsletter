@@ -12,7 +12,7 @@ SOURCE = "ozbargain"
 DATASET = "deals"
 TIER   = "public-sentiment"
 URL = "https://www.ozbargain.com.au"
-BUCKET = "p000268ds-medibank-intelligence"
+BUCKET = "p000268ds-medibank-intelligence-us"
 
 RSS_FEED_URL = "https://www.ozbargain.com.au/deals/medibank.com.au/feed"
 CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=30)

@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 # ---- Config ------------------------------------------------------
 TIER = "public-sentiment"
 DATASET = "news"
-BUCKET = "p000268ds-medibank-intelligence"
+BUCKET = "p000268ds-medibank-intelligence-us"
 SOURCE = "sbs"
 URL = "https://www.sbs.com.au/news"
 

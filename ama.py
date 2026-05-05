@@ -14,7 +14,7 @@ SOURCE = "ama" # Australian Medical Association
 DATASET = "phi_report" # Private Health Insurance Report Card
 TIER   = "public-sentiment"
 URL    = "https://www.ama.com.au"
-BUCKET  = "p000268ds-medibank-intelligence"
+BUCKET = "p000268ds-medibank-intelligence-us"
 REPORT_URL = "https://www.ama.com.au/advocacy-policy?f%5B0%5D=type%3A51" # AMA report card page
 # ------------------------------------------------------------------
 KEYWORD = "private health insurance"

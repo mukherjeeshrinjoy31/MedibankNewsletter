@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 # ---- Config ------------------------------------------------------
 TIER = "public-sentiment"
 DATASET = "news"
-BUCKET = "p000268ds-medibank-intelligence"
+BUCKET = "p000268ds-medibank-intelligence-us"
 SOURCE = "abc"
 URL = "https://www.abc.net.au/"
 
@@ -107,10 +107,10 @@ def collect_links(page, url: str) -> list[dict]:
     """Scroll through a listing page and return all candidate <a> elements."""
     print(f"  Scanning: {url}")
     try:
-        page.goto(url, wait_until="networkidle", timeout=30_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
         for _ in range(SCROLL_PASSES):
             page.keyboard.press("End")
-            page.wait_for_timeout(1_500)
+            page.wait_for_timeout(2_000)
     except Exception as exc:
         print(f"  [WARN] Failed to load {url}: {exc}")
         return []
@@ -314,5 +314,3 @@ if __name__ == "__main__":
             upload_to_s3(payload)
 
         print(f"\nDone. {len(articles)} article(s) processed.")
-
-# run "python news_articles_playwright.py --local data" to save locally
