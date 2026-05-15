@@ -1,7 +1,7 @@
 import os
 
 from typing import Optional
-from ...commons.data import APRA_ANNUAL_STATISTICS_URL, APRA_BASE_URL, HEADERS
+from ...commons.data import APRA_ANNUAL_STATISTICS_URL, APRA_BASE_URL
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
 from ...utils.apra_helpers import download_and_extract
@@ -50,4 +50,3 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
-

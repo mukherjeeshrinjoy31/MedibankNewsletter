@@ -6,7 +6,7 @@ from ...commons.tiers import TIER
 from ...utils.apra_helpers import download_and_extract
 from ...utils.helpers import build_payload, fetch_run_date, fetch_url, save_local, upload_to_s3
 
-from ...commons.data import APRA_BASE_URL, APRA_QUARTERLY_STATISTICS_URL, HEADERS
+from ...commons.data import APRA_BASE_URL, APRA_QUARTERLY_STATISTICS_URL
 
 SOURCE   = "apra"
 

@@ -12,3 +12,5 @@ class DATASET(Enum):
     MEDIA_RELEASES = "media_releases"
     CUSTOMER_OFFERS = "customer_offers"
     DEALS = "deals"
+    PHI_ANNUAL = "phi_annual"
+    PHI_STATS = "phi_stats"

@@ -5,6 +5,9 @@
 ABC_NEWS_URL                            = "https://www.abc.net.au/"
 AMA_SOURCE_URL                          = "https://www.ama.com.au/"
 AMA_REPORT_URL                          = "https://www.ama.com.au/advocacy-policy?f%5B0%5D=type%3A51" # AMA report card page
+APRA_ANNUAL_STATISTICS_URL              = "https://www.apra.gov.au/operations-of-private-health-insurers-annual-report"
+APRA_QUARTERLY_STATISTICS_URL           = "https://www.apra.gov.au/quarterly-private-health-insurance-statistics"
+APRA_BASE_URL                           = "https://www.apra.gov.au"
 ARTICLES_SEARCH_URL                     = "https://www.choice.com.au/?s=Medibank&tab=articles"
 ASX_MEDIBANK_RELEASES_URL               = "https://www.medibank.com.au/livebetter/newsroom/classification/asx-releases"
 ASX_NIB_ANNOUNCEMENTS_URL               = "https://www.nib.com.au/shareholders/announcements"
