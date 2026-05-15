@@ -8,10 +8,15 @@ from src.scrapers.public_sentiment.canstar_health_awards import run as run_canst
 from src.scrapers.public_sentiment.ama import run as run_ama
 from src.scrapers.public_sentiment.choice_articles import run as run_choice
 from src.scrapers.public_sentiment.news_articles import run as run_news
+# from src.scrapers.public_sentiment.abc_news import run as run_abc_news
+from src.scrapers.public_sentiment.ozbargain_deals import run as run_ozbargain
+# from src.scrapers.public_sentiment.sbs_news import run as run_sbs_news
+# from src.scrapers.public_sentiment.the_guardian_au import run as run_guardian
 from src.scrapers.stock_market.stock_prices import run as run_stock_prices
 from src.scrapers.medibank_specific.medibank_asx_scraper import run as run_medibank_asx
 from src.scrapers.medibank_specific.nib_asx_scraper import run as run_nib_asx
 from src.scrapers.medibank_specific.medibank_media_scraper import run as run_medibank_media
+from src.scrapers.medibank_specific.medibank_share_price_scraper import run as run_medibank_share_price
 from src.scrapers.medibank_specific.hbf_home_page_offers_scraper import run as run_hbf_offers
 from src.scrapers.medibank_specific.hcf_home_page_offers_scraper import run as run_hcf_offers
 from src.scrapers.phi.accc import run as run_accc
@@ -28,21 +33,27 @@ from src.scrapers.macro.abs_scraper import run as run_abs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+
 class ScraperOrchestrator:
     def __init__(self, local: Optional[str]):
         self.local = local
         self.scrapers = [
-            # # Public Sentiment
-            # ("canstar_health_awards", run_canstar),
-            # ("ama", run_ama),
-            # ("choice_articles", run_choice),
-            # ("news_articles", run_news),
-            # # Stock Market
-            # ("stock_prices", run_stock_prices),
+            # Public Sentiment
+            ("canstar_health_awards", run_canstar),
+            ("ama", run_ama),
+            ("choice_articles", run_choice),
+            ("news_articles", run_news),
+            # ("abc_news", run_abc_news),
+            ("ozbargain_deals", run_ozbargain),
+            # ("sbs_news", run_sbs_news),
+            # ("the_guardian_au", run_guardian),
+            # Stock Market
+            ("stock_prices", run_stock_prices),
             # Medibank Specific
             ("medibank_asx", run_medibank_asx),
             ("nib_asx", run_nib_asx),
             ("medibank_media", run_medibank_media),
+            ("medibank_share_price", run_medibank_share_price),
             ("hbf_offers", run_hbf_offers),
             ("hcf_offers", run_hcf_offers),
             # PHI Industry
@@ -56,7 +67,7 @@ class ScraperOrchestrator:
             ("ombudsman", run_ombudsman),
             ("privatehealth", run_privatehealth),
             # Macro
-            ("abs", run_abs),
+            ("abs", run_abs)
         ]
 
     def run_all(self):

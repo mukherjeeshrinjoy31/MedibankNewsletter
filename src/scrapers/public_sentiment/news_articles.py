@@ -4,7 +4,6 @@ from typing import Optional, List, Set
 import requests
 import trafilatura
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 
 from ...commons.data import HEADERS, NEWS_KEYWORDS, NEWS_SOURCES, NEWS_WHOLE_WORD_KEYWORDS
 from ...commons.dataset import DATASET

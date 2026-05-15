@@ -170,5 +170,3 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
-
-# run "python ama.py --local" to save locally to a "data" directory instead of uploading to S3
