@@ -14,3 +14,4 @@ class DATASET(Enum):
     DEALS = "deals"
     PHI_ANNUAL = "phi_annual"
     PHI_STATS = "phi_stats"
+    COMPETITOR_NEWS = "competitor_news"

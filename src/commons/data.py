@@ -21,6 +21,39 @@ RSS_FEED_URL                            = "https://www.ozbargain.com.au/deals/me
 YFINANCE_URL                            = "https://au.finance.yahoo.com/quote/ASX.AX/"
 SBS_NEWS_URL                            = "https://www.sbs.com.au/news"
 
+NEWSROOM_COMPETITOR_SOURCE_URLS = [
+    {
+        "name": "Bupa",
+        "url": "https://media.bupa.com.au/",
+        "rss": False,
+        "article_url_keywords": ["media.bupa.com.au/"]
+    },
+    {
+        "name": "NIB",
+        "url": "https://www.nib.com.au/media/company",
+        "rss": False,
+        "article_url_keywords": ["/media/"]
+    },
+    {
+        "name": "HCF",
+        "url": "https://www.hcf.com.au/about-us/media-centre/media-releases",
+        "rss": False,
+        "article_url_keywords": ["media-releases/20", "newsroom/post"]
+    },
+    {
+        "name": "HBF",
+        "url": "https://www.hbf.com.au/about-hbf/newsroom",
+        "rss": False,
+        "article_url_keywords": ["/newsroom/about-hbf/newsroom/"]
+    },
+]
+
+NEWSROOM_SKIP_URL_KEYWORDS = [
+    "contact", "login", "quote", "find-a-provider", "careers",
+    "tel:", "#nav", "bupa.com.au/#", "bupaplus", "dental.bupa",
+    "bupamvs", "format=rss", "compare", "switch", "corporate"
+]
+
 MACRO_URLS = [
     (
         "https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation"
