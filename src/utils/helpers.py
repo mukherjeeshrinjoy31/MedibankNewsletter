@@ -1,8 +1,10 @@
+from email.utils import parsedate_to_datetime
 import re
 
 import boto3
 import json
 import os
+import feedparser
 import requests
 import time
 import logging
@@ -171,3 +173,38 @@ def parse_date(text: str) -> Optional[datetime]:
             except ValueError:
                 continue
     return None
+
+def fetch_google_news_rss(rss_url: str, header: str, cutoff_days) -> str:
+    """Fetch recent news articles from a Google News RSS feed."""
+    content = f"{header}\n\n"
+    cutoff = fetch_cutoff_date(cutoff_days)
+
+    try:
+        feed = feedparser.parse(rss_url)
+
+        if not feed.entries:
+            print("No entries found in Google News RSS feed.")
+            return (content + "No news found via Google News RSS.").strip()
+
+        articles_added = 0
+        for entry in feed.entries:
+            pub_date_str = entry.get("published", "")
+            try:
+                pub_date = parsedate_to_datetime(pub_date_str)
+                if pub_date < cutoff:
+                    continue
+            except Exception:
+                pass
+
+            content += f"Title: {entry.title}\n"
+            content += f"Link: {entry.link}\n"
+            content += f"Published: {pub_date_str}\n\n"
+            articles_added += 1
+
+        print(f"✓ Found {articles_added} articles via Google News RSS")
+
+    except Exception as e:
+        print(f"Google News RSS failed: {e}")
+        content += f"Google News RSS failed: {e}\n"
+
+    return content.strip()

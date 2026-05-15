@@ -3,6 +3,8 @@
 # ============================
 
 ABC_NEWS_URL                            = "https://www.abc.net.au/"
+ACCC_BASE_URL                           = "https://www.accc.gov.au"
+ACCC_PHI_URL                            = "https://www.accc.gov.au/about-us/publications/serial-publications/private-health-insurance-reports"
 AMA_SOURCE_URL                          = "https://www.ama.com.au/"
 AMA_REPORT_URL                          = "https://www.ama.com.au/advocacy-policy?f%5B0%5D=type%3A51" # AMA report card page
 APRA_ANNUAL_STATISTICS_URL              = "https://www.apra.gov.au/operations-of-private-health-insurers-annual-report"
@@ -14,12 +16,20 @@ ASX_NIB_ANNOUNCEMENTS_URL               = "https://www.nib.com.au/shareholders/a
 GUARDIAN_NEWS_URL                       = "https://www.theguardian.com/au"
 HBF_URL                                 = "https://www.hbf.com.au"
 HCF_URL                                 = 'https://www.hcf.com.au'
+HEALTH_DEPT_MINISTERS_URL               = "https://www.health.gov.au/ministers"
+HEALTH_DEPT_CLINICAL_URL                = "https://www.health.gov.au/resources/collections/private-health-insurance-clinical-category-and-procedure-type"
+HEALTH_DEPT_BASE_URL                    = "https://www.health.gov.au"
+LEGISLATION_PHI_URL                     = "https://www.legislation.gov.au/Latest/F2018C00750"
+LEGISLATION_RSS_URL                     = "https://news.google.com/rss/search?q=private+health+insurance+legislation+amendment+Australia&hl=en-AU&gl=AU&ceid=AU:en"
+MBS_BASE_URL                            = "http://www.mbsonline.gov.au"
+MBS_DOWNLOAD_URL                        = "http://www.mbsonline.gov.au/internet/mbsonline/publishing.nsf/Content/downloads"
 MEDIBANK_BASE_URL                       = "https://www.medibank.com.au"
 MEDIBANK_SPECIFIC_MEDIA_RELEASES_URL    = "https://www.medibank.com.au/livebetter/newsroom/classification/media-releases"
 OZBARGAIN_URL                           = "https://www.ozbargain.com.au"
 RSS_FEED_URL                            = "https://www.ozbargain.com.au/deals/medibank.com.au/feed"
 YFINANCE_URL                            = "https://au.finance.yahoo.com/quote/ASX.AX/"
 SBS_NEWS_URL                            = "https://www.sbs.com.au/news"
+
 
 NEWSROOM_COMPETITOR_SOURCE_URLS = [
     {

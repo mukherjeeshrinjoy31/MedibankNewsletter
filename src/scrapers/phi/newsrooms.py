@@ -1,34 +1,20 @@
 from typing import Optional
 
-import requests
 import time
-from bs4 import BeautifulSoup
 
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from ...commons.data import NEWSROOM_COMPETITOR_SOURCE_URLS, HEADERS, NEWSROOM_SKIP_URL_KEYWORDS
-from ...utils.helpers import build_payload, fetch_run_date, save_local, upload_to_s3
+from ...commons.data import NEWSROOM_COMPETITOR_SOURCE_URLS, NEWSROOM_SKIP_URL_KEYWORDS
+from ...utils.helpers import build_payload, fetch_run_date, fetch_url, save_local, upload_to_s3
 
 SOURCE = "newsrooms"
-
-SKIP_URL_KEYWORDS = [
-    "contact", "login", "quote", "find-a-provider", "careers",
-    "tel:", "#nav", "bupa.com.au/#", "bupaplus", "dental.bupa",
-    "bupamvs", "format=rss", "compare", "switch", "corporate",
-    "health-insurance", "travel-insurance", "pet-insurance",
-    "home-insurance", "car-insurance", "overseas"
-]
-
 
 def fetch_static(url: str, source_name: str, url_keywords: list, max_articles: int = 10) -> list:
     """Scrape static HTML page and extract article links by URL keyword filtering."""
     articles = []
     seen = set()
     try:
-        response = requests.get(url, headers=HEADERS, timeout=30)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
+        soup = fetch_url(url)
         for link in soup.find_all("a", href=True):
             text = link.get_text(strip=True)
             href = link["href"]
@@ -87,7 +73,3 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
-
-
-if __name__ == "__main__":
-    run(local=True)
