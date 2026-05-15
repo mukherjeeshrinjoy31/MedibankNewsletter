@@ -19,3 +19,5 @@ class DATASET(Enum):
     SCHEDULE = "schedule"
     PREMIUM_APPROVALS    = "premium_approvals"
     CLINICAL_CATEGORIES  = "clinical_categories"
+    PRODUCTS = "products"
+    OMBUDSMAN_REPORTS = "ombudsman_reports"

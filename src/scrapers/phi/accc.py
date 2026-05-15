@@ -9,26 +9,11 @@ import requests
 from ...commons.data import ACCC_BASE_URL, HEADERS, ACCC_PHI_URL
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from ...utils.helpers import build_payload, fetch_google_news_rss, fetch_run_date, fetch_url, save_local, upload_to_s3
+from ...utils.helpers import build_payload, extract_pdf_text, fetch_google_news_rss, fetch_run_date, fetch_url, save_local, upload_to_s3
 
 SOURCE = "accc"
 RSS_URL = "https://news.google.com/rss/search?q=ACCC+private+health+insurance+Australia&hl=en-AU&gl=AU&ceid=AU:en"
 OUTPUT_DIR = "data/accc"
-
-
-def extract_pdf_text(filepath: str) -> str:
-    """Extract and clean text from a downloaded PDF file."""
-    try:
-        text = ""
-        with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-        return " ".join(text.split()).strip()
-    except Exception as e:
-        print(f"✗ PDF extraction error: {e}")
-        return ""
 
 
 def scrape_pdfs() -> str:
@@ -132,7 +117,3 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
-
-
-if __name__ == "__main__":
-    run(local=True)

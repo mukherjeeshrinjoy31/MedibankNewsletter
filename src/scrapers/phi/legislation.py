@@ -50,7 +50,3 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
-
-
-if __name__ == "__main__":
-    run(local=True)

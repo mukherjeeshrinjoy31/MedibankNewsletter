@@ -5,6 +5,7 @@ import boto3
 import json
 import os
 import feedparser
+import pdfplumber
 import requests
 import time
 import logging
@@ -208,3 +209,17 @@ def fetch_google_news_rss(rss_url: str, header: str, cutoff_days) -> str:
         content += f"Google News RSS failed: {e}\n"
 
     return content.strip()
+
+def extract_pdf_text(filepath: str) -> str:
+    """Extract and clean text from a downloaded PDF file."""
+    try:
+        text = ""
+        with pdfplumber.open(filepath) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return " ".join(text.split()).strip()
+    except Exception as e:
+        print(f"✗ PDF extraction error: {e}")
+        return ""
