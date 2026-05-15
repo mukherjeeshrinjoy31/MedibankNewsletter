@@ -280,7 +280,8 @@ NEWS_SOURCES = {
     "theguardian": {
         "url": "https://www.theguardian.com/au",
         "feeds": [
-            "https://www.theguardian.com/au/rss" # the guardian top stories
+            "https://www.theguardian.com/au/rss",
+            "https://www.theguardian.com/australia-news/health/rss"
         ],
     }
 }
@@ -302,6 +303,8 @@ NEWS_KEYWORDS = {
         "health automation", "clinical ai", "precision medicine",
     ],
 }
+
+NEWS_WHOLE_WORD_KEYWORDS = {"nib", "hcf", "hbf", "bupa"}
 
 # ============================
 # Offer Keywords (Sorted)
