@@ -1,4 +1,4 @@
-import shutil
+import re
 
 import boto3
 import json
@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
-from ..commons.data import HEADERS, BOILERPLATE
+from ..commons.data import HEADERS, NEWS_KEYWORDS
 
 # ── Logging ──────────────────────────────────────────────────────
 logging.basicConfig(
@@ -23,11 +23,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-def clean_text(text):
-    for phrase in BOILERPLATE['MEDIBANK']:
+def clean_text(text, boiler_plate):
+    for phrase in boiler_plate:
         text = text.replace(phrase, "")
     text = " ".join(text.split())
-    return text.strip()    
+    return text.strip()  
 
 def fetch_run_date():
     return datetime.now(timezone.utc).isoformat()
@@ -105,7 +105,7 @@ def fetch_article_links(search_tag_url: str, base_url: str, url: str):
         log.info(f"Found {len(links)} articles total")
         return links
     except Exception as e:
-        log.error(f"Failed to get article links: {e}")
+        logging.exception(f"Failed to get article links: {e}")
         return []
 
 def fetch_url(url: str) -> Optional[BeautifulSoup]:
@@ -117,3 +117,57 @@ def fetch_url(url: str) -> Optional[BeautifulSoup]:
     except requests.RequestException as e:
         print(f"Error fetching {url}: {e}")
         return None
+    
+
+# ── Helper: load last week's offer ──────────────────────────────
+def load_last_offer(last_offer_file):
+    try:
+        if os.path.exists(last_offer_file):
+            with open(last_offer_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+    except Exception as e:
+        log.warning(f"Could not load last offer: {e}")
+    return None
+
+
+# ── Helper: save this week's offer ──────────────────────────────
+def save_current_offer(offer_text, path):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)   # ← FIX
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(offer_text)
+    except Exception as e:
+        log.warning(f"Could not save current offer: {e}")
+
+def matches_keywords(text: str) -> bool:
+    text = text.lower()
+    groups_matched = sum(any(kw in text for kw in kws) for kws in NEWS_KEYWORDS.values())
+    return groups_matched >= 1 # match either phi or health-tech (not necessarily both)
+
+
+def is_boilerplate(text: str, boilerplate_patterns: list) -> bool:
+    t = text.lower().strip()
+    return any(re.match(pat, t) for pat in boilerplate_patterns)
+
+def build_content_list(articles: list[dict]) -> list[dict]:
+    return [
+        {
+            "index": i,
+            "headline": article["headline"],
+            "published": article["pub_date"] or "unknown",
+            "source": article["url"],
+            "body": article["body"],
+        }
+        for i, article in enumerate(articles, start=1)
+    ]
+
+def parse_date(text: str) -> Optional[datetime]:
+    match = re.search(r"(\d{1,2})[\s\n]+([A-Za-z]+)[\s\n]+(\d{4})", text)
+    if match:
+        raw = f"{match.group(1)} {match.group(2)} {match.group(3)}"
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+    return None
