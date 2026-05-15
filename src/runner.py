@@ -14,7 +14,16 @@ from src.scrapers.medibank_specific.nib_asx_scraper import run as run_nib_asx
 from src.scrapers.medibank_specific.medibank_media_scraper import run as run_medibank_media
 from src.scrapers.medibank_specific.hbf_home_page_offers_scraper import run as run_hbf_offers
 from src.scrapers.medibank_specific.hcf_home_page_offers_scraper import run as run_hcf_offers
-# add other scrapers here as needed
+from src.scrapers.phi.accc import run as run_accc
+from src.scrapers.phi.apra import run as run_apra
+from src.scrapers.phi.apra_annual import run as run_apra_annual
+from src.scrapers.phi.health_dept import run as run_health_dept
+from src.scrapers.phi.legislation import run as run_legislation
+from src.scrapers.phi.mbs import run as run_mbs
+from src.scrapers.phi.newsrooms import run as run_newsrooms
+from src.scrapers.phi.ombudsman import run as run_ombudsman
+from src.scrapers.phi.privatehealth import run as run_privatehealth
+from src.scrapers.macro.abs_scraper import run as run_abs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -23,22 +32,37 @@ class ScraperOrchestrator:
     def __init__(self, local: Optional[str]):
         self.local = local
         self.scrapers = [
-            ("canstar_health_awards", run_canstar),
-            ("ama", run_ama),
-            ("choice_articles", run_choice),
-            ("news_articles", run_news),
-            ("stock_prices", run_stock_prices),
+            # # Public Sentiment
+            # ("canstar_health_awards", run_canstar),
+            # ("ama", run_ama),
+            # ("choice_articles", run_choice),
+            # ("news_articles", run_news),
+            # # Stock Market
+            # ("stock_prices", run_stock_prices),
+            # Medibank Specific
             ("medibank_asx", run_medibank_asx),
             ("nib_asx", run_nib_asx),
             ("medibank_media", run_medibank_media),
             ("hbf_offers", run_hbf_offers),
-            ("hcf_offers", run_hcf_offers)
+            ("hcf_offers", run_hcf_offers),
+            # PHI Industry
+            ("accc", run_accc),
+            ("apra", run_apra),
+            ("apra_annual", run_apra_annual),
+            ("health_dept", run_health_dept),
+            ("legislation", run_legislation),
+            ("mbs", run_mbs),
+            ("newsrooms", run_newsrooms),
+            ("ombudsman", run_ombudsman),
+            ("privatehealth", run_privatehealth),
+            # Macro
+            ("abs", run_abs),
         ]
 
     def run_all(self):
         summary = {}
 
-        if self.local:  # only delete if saving locally
+        if self.local:
             data_root = "data"
             if os.path.exists(data_root):
                 shutil.rmtree(data_root)
@@ -53,10 +77,12 @@ class ScraperOrchestrator:
             except Exception as exc:
                 logger.exception("Error running %s", name)
                 summary[name] = {"success": False, "error": str(exc)}
+
         return summary
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Run all public_sentiment scrapers")
+    parser = argparse.ArgumentParser(description="Run all scrapers")
     parser.add_argument("--local", metavar="DIR", nargs="?", const=".", help="Save outputs locally")
     args = parser.parse_args()
 
@@ -66,6 +92,7 @@ def main():
     for name, info in summary.items():
         status = "OK" if info["success"] else f"FAILED: {info.get('error')}"
         logger.info("%s -> %s", name, status)
+
 
 if __name__ == "__main__":
     main()

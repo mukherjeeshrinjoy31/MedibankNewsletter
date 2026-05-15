@@ -3,6 +3,7 @@ import json
 import time
 import logging
 from typing import Optional
+import re
 import requests
 import pdfplumber
 from datetime import datetime, timezone
@@ -84,7 +85,6 @@ def extract_date_from_parent(title, parent):
     if parent:
         parent_text = parent.get_text(separator="|", strip=True)
                 # Date format is like "8 April 2026"
-        import re
         date_match = re.search(
                     r'(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})',
                     parent_text
@@ -197,6 +197,11 @@ def scrape():
 def run(local: Optional[str] = None) -> bool:
     print(f"Scraping Medibank Specific Sources (NIB ASX Announcements) from: \n  {ASX_NIB_ANNOUNCEMENTS_URL} \n")
     content = scrape()
+
+    if not content:
+        print("No announcements found within last 7 days — skipping.")
+        return False
+
     print(f"\nExtracted {len(content):,} characters of text.")
     payload = build_payload(
         content,
@@ -204,11 +209,11 @@ def run(local: Optional[str] = None) -> bool:
         DATASET.ASX_ANNOUNCEMENTS.value,
         fetch_run_date(),
         TIER.MEDIBANK_SPECIFIC.value,
-        ASX_NIB_ANNOUNCEMENTS_URL  
+        ASX_NIB_ANNOUNCEMENTS_URL
     )
 
     if local:
         save_local(payload)
     else:
         upload_to_s3(payload)
-    return True  
+    return True

@@ -15,7 +15,7 @@ SOURCE = "ama" # Australian Medical Association
 KEYWORD = "private health insurance"
 DATE_FORMATS = ["%d %B %Y", "%B %d, %Y", "%Y-%m-%d", "%d/%m/%Y"]
 
-def get_report_publish_date(report_url: str) -> datetime | None:
+def get_report_publish_date(report_url: str) -> Optional[datetime]:
     soup = fetch_url(report_url)
  
     time_tag = soup.find("time")
@@ -139,7 +139,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
     return " \n\n ".join(pages_text)
 
-def scrape() -> str | None:
+def scrape() -> Optional[str]:
     report_page_url = find_report_url(AMA_REPORT_URL, KEYWORD)
     if not report_page_url:
         return None
