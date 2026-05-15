@@ -121,3 +121,4 @@ def run(local: Optional[str] = None) -> bool:
     else:
         upload_to_s3(premium_payload)
         upload_to_s3(clinical_payload)
+    return True
