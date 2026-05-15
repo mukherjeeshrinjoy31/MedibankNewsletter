@@ -105,7 +105,7 @@ def fetch_article_links(search_tag_url: str, base_url: str, url: str):
         log.info(f"Found {len(links)} articles total")
         return links
     except Exception as e:
-        log.error(f"Failed to get article links: {e}")
+        logging.exception(f"Failed to get article links: {e}")
         return []
 
 def fetch_url(url: str) -> Optional[BeautifulSoup]:
@@ -161,7 +161,7 @@ def build_content_list(articles: list[dict]) -> list[dict]:
         for i, article in enumerate(articles, start=1)
     ]
 
-def parse_date(text: str) -> datetime | None:
+def parse_date(text: str) -> Optional[datetime]:
     match = re.search(r"(\d{1,2})[\s\n]+([A-Za-z]+)[\s\n]+(\d{4})", text)
     if match:
         raw = f"{match.group(1)} {match.group(2)} {match.group(3)}"

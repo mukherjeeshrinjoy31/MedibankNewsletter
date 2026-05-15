@@ -22,49 +22,18 @@ S3 paths:
     raw/macro/abs_labour_force_detailed_{YYYY-MM-DD}.json
 """
 
-import json
 import logging
 import re
-from datetime import datetime, timezone
+from typing import Optional
 
-import boto3
 import requests
 from bs4 import BeautifulSoup
 
+from ...commons.data import MACRO_NOISE_TAGS, MACRO_URLS
+from ...commons.tiers import TIER
+from ...utils.helpers import build_payload, fetch_run_date, save_local, upload_to_s3
 
-session = boto3.Session(profile_name='RMIT-ResearchAdmin-851166494260')
-s3 = session.client('s3', region_name='us-east-1')
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-# Each entry: (page URL, S3 key slug, dataset name)
-PAGES = [
-    (
-        "https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation"
-        "/consumer-price-index-australia/latest-release",
-        "abs_cpi",
-        "cpi",
-    ),
-    (
-        "https://www.abs.gov.au/statistics/labour/employment-and-unemployment"
-        "/labour-force-australia/latest-release",
-        "abs_labour_force",
-        "labour_force",
-    ),
-    (
-        "https://www.abs.gov.au/statistics/labour/employment-and-unemployment"
-        "/labour-force-australia-detailed/latest-release",
-        "abs_labour_force_detailed",
-        "labour_force_detailed",
-    ),
-]
-
-S3_BUCKET = "p000268ds-medibank-intelligence-us"
-S3_REGION = "us-east-1"
-
-# Tags that contribute no readable content and produce noise if included
-_NOISE_TAGS = {"script", "style", "noscript", "nav", "footer", "header", "form", "button"}
+source = "abs"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -117,7 +86,7 @@ def extract_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
 
     # Remove tags that contribute no meaningful content
-    for tag in soup.find_all(_NOISE_TAGS):
+    for tag in soup.find_all(MACRO_NOISE_TAGS):
         tag.decompose()
 
     raw_text = soup.get_text(separator=" ")
@@ -139,83 +108,32 @@ def extract_text(html: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# S3 Upload
-# ---------------------------------------------------------------------------
-
-def build_s3_key(slug: str, date: datetime) -> str:
-    """Return the S3 object key for a given slug and date."""
-    return f"raw/macro/{slug}_{date.strftime('%Y-%m-%d')}.json"
-
-
-def upload_to_s3(payload: dict, bucket: str, key: str, region: str) -> None:
-    """
-    Serialise *payload* to JSON and upload it to S3.
-
-    boto3 picks up credentials from the standard AWS credential chain:
-    environment variables → ~/.aws/credentials → IAM role — whichever is
-    configured locally will be used automatically.
-    """
-    s3 = session.client("s3", region_name=region)
-    body = json.dumps(payload, ensure_ascii=False, indent=2)
-    log.info("Uploading to s3://%s/%s", bucket, key)
-    s3.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=body.encode("utf-8"),
-        ContentType="application/json",
-    )
-    log.info("Upload complete")
-
-
-# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
-def scrape_page(url: str, slug: str, dataset: str, now: datetime) -> dict:
+def scrape_page(url: str) -> dict:
     """Scrape a single ABS page and upload it to S3. Returns the payload."""
     html = fetch_page(url)
-    content = extract_text(html)
+    return extract_text(html)
 
-    payload = {
-        "source": "abs",
-        "tier": "macro",
-        "dataset": dataset,
-        "scraped_at": now.isoformat(),
-        "url": url,
-        "content": content,
-    }
-
-    key = build_s3_key(slug, now)
-    upload_to_s3(payload, S3_BUCKET, key, S3_REGION)
-
-    return payload
-
-
-def run() -> list[dict]:
-    """
-    Scrape all configured ABS pages and upload each to S3.
-    Returns a list of payloads (one per page).
-    """
-    now = datetime.now(timezone.utc)
-    results = []
-
-    for url, slug, dataset in PAGES:
+def run(local: Optional[str] = None) -> bool:
+    print("Scraping multiple ABS statistical release pages")
+    for url, slug, dataset in MACRO_URLS:
         log.info("--- Starting: %s ---", slug)
-        payload = scrape_page(url, slug, dataset, now)
-        results.append(payload)
-
-    log.info("All %d pages scraped and uploaded.", len(results))
-    return results
-
+        content = scrape_page(url)
+        print(f"\nExtracted {len(content):,} characters of text.")
+        payload = build_payload(
+            content,
+            source,
+            dataset,
+            fetch_run_date(),
+            TIER.MACRO.value,
+            url  
+        )
+        if local:
+            save_local(payload)
+        else:
+            upload_to_s3(payload)
 
 if __name__ == "__main__":
-    results = run()
-    print()
-    for r in results:
-        slug = r["url"].split("/")[-3].replace("-", "_")
-        key = r["url"].split("/")[-3]
-        print(f"  url        : {r['url']}")
-        print(f"  scraped_at : {r['scraped_at']}")
-        print(f"  content    : {len(r['content']):,} chars")
-        print(f"  preview    : {r['content'][:120]}")
-        print()
+    run(local=True)

@@ -18,6 +18,29 @@ RSS_FEED_URL                            = "https://www.ozbargain.com.au/deals/me
 YFINANCE_URL                            = "https://au.finance.yahoo.com/quote/ASX.AX/"
 SBS_NEWS_URL                            = "https://www.sbs.com.au/news"
 
+MACRO_URLS = [
+    (
+        "https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation"
+        "/consumer-price-index-australia/latest-release",
+        "abs_cpi",
+        "cpi",
+    ),
+    (
+        "https://www.abs.gov.au/statistics/labour/employment-and-unemployment"
+        "/labour-force-australia/latest-release",
+        "abs_labour_force",
+        "labour_force",
+    ),
+    (
+        "https://www.abs.gov.au/statistics/labour/employment-and-unemployment"
+        "/labour-force-australia-detailed/latest-release",
+        "abs_labour_force_detailed",
+        "labour_force_detailed",
+    ),
+]
+
+MACRO_NOISE_TAGS = {"script", "style", "noscript", "nav", "footer", "header", "form", "button"}
+
 NEWS_URLS = {
     "ABC" : [
         "https://www.abc.net.au/news/health",
