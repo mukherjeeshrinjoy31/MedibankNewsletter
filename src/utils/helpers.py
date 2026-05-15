@@ -79,7 +79,7 @@ def save_local(payload: dict) -> str:
 
     # Build filename
     dataset = payload["dataset"]
-    filename = f"{payload['source']}_{dataset}_{dataset}_{run_date}.json"
+    filename = f"{payload['source']}_{dataset}_{run_date}.json"
     path = os.path.join(tier_dir, filename)
 
     # Write file
