@@ -1,24 +1,155 @@
+from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
+import json
+import os
 import re
 from typing import Optional, List, Set
 
+import boto3
 import requests
 import trafilatura
 import xml.etree.ElementTree as ET
 
-from ...commons.data import HEADERS, NEWS_KEYWORDS, NEWS_SOURCES, NEWS_WHOLE_WORD_KEYWORDS
-from ...commons.dataset import DATASET
-from ...commons.tiers import TIER
-from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_run_date, save_local, upload_to_s3
-from ...utils.html import parse_date, strip_html
-
 SOURCE = "news"
 
+# ---- Config ------------------------------------------------------
+TIER = "public-sentiment"
+DATASET = "news"
+BUCKET = "p000268ds-medibank-intelligence-us"
+CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
+SOURCES = {
+    "abc": {
+        "url": "https://www.abc.net.au/",
+        "feeds": [
+            "https://www.abc.net.au/news/feed/5470430/rss.xml",
+            "https://www.abc.net.au/news/feed/45910/rss.xml",
+            "https://www.abc.net.au/news/feed/7112600/rss.xml",
+            "https://www.abc.net.au/news/feed/9167776/rss.xml"
+        ],
+    },
+    "sbs": {
+        "url": "https://www.sbs.com.au/news",
+        "feeds": [
+            "https://www.sbs.com.au/news/feed",
+            "https://www.sbs.com.au/feed/news/podcast-rss/headlines-on-health"
+        ],
+    },
+    "theguardian": {
+        "url": "https://www.theguardian.com/au",
+        "feeds": [
+            "https://www.theguardian.com/au/rss",
+            "https://www.theguardian.com/australia-news/health/rss"
+        ],
+    }
+}
+
+KEYWORDS = {
+    "phi": [
+        "medibank", "bupa", "nib", "hcf", "hbf",
+        "health insurance", "health fund",
+        "health cover", "health insurer", "private health"
+    ],
+    "health_tech": [
+        "health technology", "digital health", "health ai",
+        "medical ai", "health innovation", "medtech",
+        "telehealth", "health data", "wearable health",
+        "health automation", "clinical ai", "precision medicine"
+    ]
+}
+
+# Keywords that need whole-word matching (short words that appear as substrings)
+WHOLE_WORD_KEYWORDS     = {"nib", "hcf", "hbf", "bupa"}
+HEADERS                 = {"User-Agent": "Mozilla/5.0"}
+ALL_KEYWORDS            = [kw.lower() for kws in KEYWORDS.values() for kw in kws]
+DATE_FORMATS            = [
+    "%a, %d %b %Y %H:%M:%S %Z",
+    "%a, %d %b %Y %H:%M:%S %z",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%Y-%m-%dT%H:%M:%SZ"
+
+]
+
+# ---- Helper Functions ------------------------------------------------------
+
+class MLStripper(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: List[str] = []
+
+    def handle_data(self, d: str) -> None:
+        self.parts.append(d)
+
+    def get_data(self) -> str:
+        return "".join(self.parts).strip()
+    
+def strip_html(raw: str) -> str:
+    stripper = MLStripper()
+    stripper.feed(raw or "")
+    return stripper.get_data()
+
+def parse_date(date_str: str, date_formats: Optional[List[str]] = None) -> Optional[datetime]:
+    if not date_str:
+        return None
+    formats = date_formats if date_formats is not None else DATE_FORMATS
+    for date_format in formats:
+        try:
+            dt = datetime.strptime(date_str.strip(), date_format)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            continue
+    return None 
+
+def build_payload(content: str, source: str, dataset: str, scrapped_at: datetime, tier: str, url: str) -> dict:
+    return {
+        'source': source,
+        'tier': tier,
+        'dataset': dataset,
+        'scraped_at': scrapped_at,
+        'url': url,
+        'content': content
+    }
+
+def save_local(payload: dict) -> str:
+    """
+    Save payload to data/{tier}/{source}_{dataset}_{dataset}_{run_date}.json.
+    Does NOT delete the data directory.
+    Returns the full path of the saved file.
+    """
+    # Build directory path
+    tier_dir = os.path.join("data", payload["tier"])
+    os.makedirs(tier_dir, exist_ok=True)
+
+    # Build run date
+    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Build filename
+    dataset = payload["dataset"]
+    filename = f"{payload['source']}_{dataset}_{run_date}.json"
+    path = os.path.join(tier_dir, filename)
+
+    # Write file
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+    print(f"Saved locally: {path}")
+
+def upload_to_s3(payload: dict) -> None:
+    s3 = boto3.client("s3", region_name="us-east-1")
+    key = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
+    s3.put_object(
+        Bucket=BUCKET,
+        Key=key,
+        Body=json.dumps(payload, ensure_ascii=False),
+        ContentType='application/json'
+    )
+    print(f"Uploaded: s3://{BUCKET}/{key}")
 
 # ---- Keyword Matching ------------------------------------------------------
 
 def keyword_found(kw: str, text: str) -> bool:
     """Match keyword — whole word matching for short ambiguous terms."""
-    if kw in NEWS_WHOLE_WORD_KEYWORDS:
+    if kw in WHOLE_WORD_KEYWORDS:
         return bool(re.search(rf'\b{re.escape(kw)}\b', text))
     return kw in text
 
@@ -28,7 +159,7 @@ def matches_keywords(text: str, matches: int = 1) -> bool:
     text = text.lower()
     groups_matched = sum(
         any(keyword_found(kw, text) for kw in kws)
-        for kws in NEWS_KEYWORDS.values()
+        for kws in KEYWORDS.values()
     )
     return groups_matched >= matches
 
@@ -84,7 +215,7 @@ def fetch_feed(feed_url: str) -> List[dict]:
         pub_date_str = text('pubDate') or text('published') or text('updated')
         pub_date = parse_date(pub_date_str)
 
-        if pub_date and pub_date < fetch_cutoff_date(7):
+        if pub_date and pub_date < CUTOFF_DATE:
             continue
 
         full_text = fetch_article_text(url)
@@ -138,7 +269,7 @@ def scrape_source(source_id: str, source_config: dict) -> Optional[List[dict]]:
     ]
 
 def lambda_handler(event, context):
-    for source_id, source_cfg in NEWS_SOURCES.items():
+    for source_id, source_cfg in SOURCES.items():
         content = scrape_source(source_id, source_cfg)
         if not content:
             print(f"[SKIP] {source_id} — no content.")
@@ -147,7 +278,7 @@ def lambda_handler(event, context):
             content,
             source_id,
             DATASET.NEWS.value,
-            fetch_run_date(),
+            datetime.now(timezone.utc).isoformat(),
             TIER.PUBLIC_SENTIMENT.value,
             source_cfg["url"]
         )
@@ -158,7 +289,7 @@ def lambda_handler(event, context):
 
 def run(local: Optional[str] = None) -> bool:
     """Scrape all news sources and upload to S3 or save locally."""
-    for source_id, source_cfg in NEWS_SOURCES.items():
+    for source_id, source_cfg in SOURCES.items():
         content = scrape_source(source_id, source_cfg)
 
         if not content:
@@ -168,9 +299,9 @@ def run(local: Optional[str] = None) -> bool:
         payload = build_payload(
             content,
             source_id,
-            DATASET.NEWS.value,
-            fetch_run_date(),
-            TIER.PUBLIC_SENTIMENT.value,
+            DATASET,
+            datetime.now(timezone.utc).isoformat(),
+            TIER,
             source_cfg["url"]
         )
 
@@ -179,3 +310,6 @@ def run(local: Optional[str] = None) -> bool:
         else:
             upload_to_s3(payload)
         return True    
+    
+if __name__ == "__main__":
+    run(local="data")

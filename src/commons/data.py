@@ -257,36 +257,6 @@ BOILERPLATE = {
 }
 
 # ============================
-# News Sources (Sorted)
-# ============================
-
-NEWS_SOURCES = {
-    "abc": {
-        "url": "https://www.abc.net.au/",
-        "feeds": [
-            "https://www.abc.net.au/news/feed/5470430/rss.xml", # abc top stories
-            "https://www.abc.net.au/news/feed/45910/rss.xml", # abc top stories
-            "https://www.abc.net.au/news/feed/7112600/rss.xml", # abc health
-            "https://www.abc.net.au/news/feed/9167776/rss.xml" # abc health
-        ],
-    },
-    "sbs": {
-        "url": "https://www.sbs.com.au/news",
-        "feeds": [
-            "https://www.sbs.com.au/news/feed", # sbs top stories,
-            "https://www.sbs.com.au/feed/news/podcast-rss/headlines-on-health" # sbs health podcast
-        ],
-    },
-    "theguardian": {
-        "url": "https://www.theguardian.com/au",
-        "feeds": [
-            "https://www.theguardian.com/au/rss",
-            "https://www.theguardian.com/australia-news/health/rss"
-        ],
-    }
-}
-
-# ============================
 # News Keywords (Sorted)
 # ============================
 
@@ -303,8 +273,6 @@ NEWS_KEYWORDS = {
         "health automation", "clinical ai", "precision medicine",
     ],
 }
-
-NEWS_WHOLE_WORD_KEYWORDS = {"nib", "hcf", "hbf", "bupa"}
 
 # ============================
 # Offer Keywords (Sorted)
