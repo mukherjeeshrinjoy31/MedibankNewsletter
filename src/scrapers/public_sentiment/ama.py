@@ -83,7 +83,7 @@ def find_report_url(listing_url: str, keyword: str) -> str:
             if pub_date >= fetch_cutoff_date(7):
                 print(f"  Within range ({pub_date.date()}) - using this report.")
                 return href
-            print(f"  Outside 30-day range ({pub_date.date()}) - noting as fallback.")
+            print(f"  Outside 7-day range ({pub_date.date()}) - noting as fallback.")
             dated_candidates.append((pub_date, title, href))
         else:
             print("  Warning: could not determine publish date. Noting as fallback.")

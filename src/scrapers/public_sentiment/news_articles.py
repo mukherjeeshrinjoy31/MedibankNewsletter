@@ -137,6 +137,22 @@ def scrape_source(source_id: str, source_config: dict) -> Optional[List[dict]]:
         for i, a in enumerate(all_articles, start=1)
     ]
 
+def lambda_handler(event, context):
+    for source_id, source_cfg in NEWS_SOURCES.items():
+        content = scrape_source(source_id, source_cfg)
+        if not content:
+            print(f"[SKIP] {source_id} — no content.")
+            continue
+        payload = build_payload(
+            content,
+            source_id,
+            DATASET.NEWS.value,
+            fetch_run_date(),
+            TIER.PUBLIC_SENTIMENT.value,
+            source_cfg["url"]
+        )
+        upload_to_s3(payload)
+    return {"statusCode": 200, "body": "Done"}
 
 # ---- Run ------------------------------------------------------
 

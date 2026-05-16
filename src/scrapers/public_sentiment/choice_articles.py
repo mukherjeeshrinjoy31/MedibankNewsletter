@@ -23,7 +23,7 @@ def is_within_cutoff(article_date: Optional[datetime]) -> bool:
     """Return True if article is within the 30-day cutoff."""
     if article_date is None:
         return True
-    return article_date >= fetch_cutoff_date(30)
+    return article_date >= fetch_cutoff_date(7)
 
 
 def parse_article_date(soup: BeautifulSoup) -> Optional[datetime]:
@@ -34,7 +34,7 @@ def parse_article_date(soup: BeautifulSoup) -> Optional[datetime]:
     match = re.search(r"Last updated:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", text, re.I)
     if match:
         day, month_str, year = match.groups()
-        full_month = MONTH_MAP.get(month_str[:3].lower(), month_str)
+        full_month = MONTH_MAP.get(month_str[:3], month_str)
         try:
             return datetime.strptime(f"{day} {full_month} {year}", "%d %B %Y").replace(tzinfo=timezone.utc)
         except ValueError:

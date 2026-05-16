@@ -133,7 +133,7 @@ def fetch_feed(feed_url: str) -> List[dict]:
         expiry_date = parse_date(expiry_str) if expiry_str else None
         pub_date    = parse_date(pub_date_str)
 
-        within_cutoff = pub_date and pub_date >= fetch_cutoff_date(30)
+        within_cutoff = pub_date and pub_date >= fetch_cutoff_date(7)
         still_active  = is_active(expiry_date)
 
         if not still_active and not within_cutoff:
