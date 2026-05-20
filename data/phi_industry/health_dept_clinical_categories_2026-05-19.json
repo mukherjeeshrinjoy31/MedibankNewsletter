@@ -1,8 +1,0 @@
-{
-  "source": "health_dept",
-  "tier": "phi_industry",
-  "dataset": "clinical_categories",
-  "scraped_at": "2026-05-19T03:03:14.240261+00:00",
-  "url": "https://www.health.gov.au/resources/collections/private-health-insurance-clinical-category-and-procedure-type",
-  "content": "Dept of Health — Clinical Categories Latest News"
-}
