@@ -1,3 +1,19 @@
-__pycache__
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 .DS_Store
-.vscode
+.vscode/
+
+# Sensitive files
+.env
+*.pem
+
+# Generated data folders
+data/
+offer_files/
+
+# Logs
+*.log
+logs/
