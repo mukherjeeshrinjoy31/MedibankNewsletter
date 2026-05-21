@@ -201,5 +201,4 @@ def run(local: Optional[str] = None) -> bool:
         upload_to_s3(payload)
     return True
 
-
     

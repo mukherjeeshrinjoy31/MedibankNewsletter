@@ -1,8 +1,11 @@
-import shutil
+from email.utils import parsedate_to_datetime
+import re
 
 import boto3
 import json
 import os
+import feedparser
+import pdfplumber
 import requests
 import time
 import logging
@@ -10,7 +13,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
-from ..commons.data import HEADERS, BOILERPLATE
+from ..commons.data import HEADERS, NEWS_KEYWORDS
 
 # ── Logging ──────────────────────────────────────────────────────
 logging.basicConfig(
@@ -76,7 +79,7 @@ def save_local(payload: dict) -> str:
 
     # Build filename
     dataset = payload["dataset"]
-    filename = f"{payload['source']}_{dataset}_{dataset}_{run_date}.json"
+    filename = f"{payload['source']}_{dataset}_{run_date}.json"
     path = os.path.join(tier_dir, filename)
 
     # Write file
@@ -105,7 +108,7 @@ def fetch_article_links(search_tag_url: str, base_url: str, url: str):
         log.info(f"Found {len(links)} articles total")
         return links
     except Exception as e:
-        log.error(f"Failed to get article links: {e}")
+        logging.exception(f"Failed to get article links: {e}")
         return []
 
 def fetch_url(url: str) -> Optional[BeautifulSoup]:
@@ -138,3 +141,85 @@ def save_current_offer(offer_text, path):
             f.write(offer_text)
     except Exception as e:
         log.warning(f"Could not save current offer: {e}")
+
+def matches_keywords(text: str) -> bool:
+    text = text.lower()
+    groups_matched = sum(any(kw in text for kw in kws) for kws in NEWS_KEYWORDS.values())
+    return groups_matched >= 1 # match either phi or health-tech (not necessarily both)
+
+
+def is_boilerplate(text: str, boilerplate_patterns: list) -> bool:
+    t = text.lower().strip()
+    return any(re.match(pat, t) for pat in boilerplate_patterns)
+
+def build_content_list(articles: list[dict]) -> list[dict]:
+    return [
+        {
+            "index": i,
+            "headline": article["headline"],
+            "published": article["pub_date"] or "unknown",
+            "source": article["url"],
+            "body": article["body"],
+        }
+        for i, article in enumerate(articles, start=1)
+    ]
+
+def parse_date(text: str) -> Optional[datetime]:
+    match = re.search(r"(\d{1,2})[\s\n]+([A-Za-z]+)[\s\n]+(\d{4})", text)
+    if match:
+        raw = f"{match.group(1)} {match.group(2)} {match.group(3)}"
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+    return None
+
+def fetch_google_news_rss(rss_url: str, header: str, cutoff_days) -> str:
+    """Fetch recent news articles from a Google News RSS feed."""
+    content = f"{header}\n\n"
+    cutoff = fetch_cutoff_date(cutoff_days)
+
+    try:
+        feed = feedparser.parse(rss_url)
+
+        if not feed.entries:
+            print("No entries found in Google News RSS feed.")
+            return (content + "No news found via Google News RSS.").strip()
+
+        articles_added = 0
+        for entry in feed.entries:
+            pub_date_str = entry.get("published", "")
+            try:
+                pub_date = parsedate_to_datetime(pub_date_str)
+                if pub_date < cutoff:
+                    continue
+            except Exception:
+                pass
+
+            content += f"Title: {entry.title}\n"
+            content += f"Link: {entry.link}\n"
+            content += f"Published: {pub_date_str}\n\n"
+            articles_added += 1
+
+        print(f"✓ Found {articles_added} articles via Google News RSS")
+
+    except Exception as e:
+        print(f"Google News RSS failed: {e}")
+        content += f"Google News RSS failed: {e}\n"
+
+    return content.strip()
+
+def extract_pdf_text(filepath: str) -> str:
+    """Extract and clean text from a downloaded PDF file."""
+    try:
+        text = ""
+        with pdfplumber.open(filepath) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return " ".join(text.split()).strip()
+    except Exception as e:
+        print(f"✗ PDF extraction error: {e}")
+        return ""
