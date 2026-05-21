@@ -10,7 +10,9 @@ AWS_REGION="us-east-1"
 ECR_REPO_NAME="medibank-newsletter"
 PROJECT_DIR="$HOME/MedibankNewsletter"
 
-# ---- Prompt for AWS credentials ----
+# ---- Prompt for branch and AWS credentials ----
+read -p "Enter branch name (default: main): " BRANCH
+BRANCH=${BRANCH:-main}
 read -p "Enter AWS Account ID: " AWS_ACCOUNT_ID
 read -p "Enter AWS Access Key ID: " AWS_ACCESS_KEY_ID
 read -s -p "Enter AWS Secret Access Key: " AWS_SECRET_ACCESS_KEY
@@ -28,8 +30,9 @@ export AWS_DEFAULT_REGION=$AWS_REGION
 echo ""
 echo "[1/5] Pulling latest code from GitHub..."
 cd $PROJECT_DIR
-git pull origin main
-echo "✓ Code updated"
+git fetch origin $BRANCH
+git reset --hard origin/$BRANCH
+echo "✓ Code updated from branch: $BRANCH"
 
 # Step 2 — Create ECR repository
 echo ""
