@@ -72,7 +72,9 @@ aws ecs register-task-definition \
                 }
             }
         }
-    ]"
+    ]" \
+    --query "taskDefinition.taskDefinitionArn" \
+    --output text
 echo "✓ Task definition registered: $TASK_FAMILY"
 
 # Step 4 — Get default VPC and subnet
