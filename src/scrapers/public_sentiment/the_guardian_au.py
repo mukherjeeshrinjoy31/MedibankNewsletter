@@ -1,29 +1,28 @@
 import json
+import logging
 import re
-import argparse
-from typing import Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Tuple
+
+from playwright.sync_api import sync_playwright
+
 from ...commons.data import EXCLUDED_SECTIONS, GUARDIAN_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_URLS
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from playwright.sync_api import sync_playwright
-from ...utils.helpers import build_content_list, build_payload, fetch_cutoff_date, fetch_run_date, is_boilerplate, matches_keywords, save_local, upload_to_s3
+from ...utils.helpers import (
+    build_content_list, build_payload, fetch_cutoff_date,
+    fetch_run_date, is_boilerplate, matches_keywords,
+    save_local, upload_to_s3
+)
 
-# ---- Config ------------------------------------------------------
-SOURCE = "guardian"
+SOURCE       = "guardian"
 MAX_ARTICLES = 20
 SCROLL_PASSES = 4
 
-# Matches Guardian article URL paths: /section/.../2026/apr/27/slug
-# Slug must end with word chars — rules out /all, #fragment etc.
 ARTICLE_URL_PATTERN = re.compile(r"^/(?:[a-z0-9\-]+/)*\d{4}/[a-z]{3}/\d{2}/[a-z0-9][a-z0-9\-]*$")
-
-# Extracts /2026/apr/27/ from a Guardian URL path
 _URL_DATE_RE = re.compile(r"/(\d{4})/([a-z]{3})/(\d{2})/")
 
-# JS that collects article card data in one round-trip.
-# Starts from <a href*='/202'> anchors, deduplicates by href,
-# walks up to the card container to find headline + datetime.
+# JS that collects article card data in one round-trip
 _CARD_JS = """
 elements => {
     const seen = new Set();
@@ -32,28 +31,22 @@ elements => {
     for (const el of elements) {
         let href = el.getAttribute('href') || '';
 
-        // Normalise: strip domain prefix if present
         if (href.startsWith('https://www.theguardian.com')) {
             href = href.slice('https://www.theguardian.com'.length);
         }
 
-        // Must be a relative Guardian path
         if (!href.startsWith('/')) continue;
-        // Skip archive indexes, comment anchors, non-article paths
         if (href.endsWith('/all')) continue;
         if (href.includes('#')) continue;
-
         if (seen.has(href)) continue;
         seen.add(href);
 
-        // Walk up to nearest card container
         const card = el.closest('article')
                   || el.closest('[class*="card"]')
                   || el.closest('[class*="container"]')
                   || el.closest('li')
                   || el.parentElement;
 
-        // Headline: heading element in card > aria-label > anchor text
         let headline = '';
         if (card) {
             const h = card.querySelector('h1,h2,h3,h4');
@@ -63,11 +56,8 @@ elements => {
             headline = (el.getAttribute('aria-label') || el.innerText || '').trim();
         }
 
-        // Datetime from <time> in the card
         const timeEl = card ? card.querySelector('time[datetime]') : null;
         const datetime = timeEl ? timeEl.getAttribute('datetime') : null;
-
-        // Full card text for keyword matching
         const cardText = card ? card.innerText : '';
 
         results.push({ href, headline, datetime, cardText });
@@ -76,13 +66,20 @@ elements => {
 }
 """
 
-# ---- Helpers ------------------------------------------------------
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def is_excluded_section(href: str) -> bool:
+    """Return True if the URL path belongs to an excluded section."""
     parts = href.strip("/").split("/")
     return any(seg in EXCLUDED_SECTIONS for seg in parts)
 
 
-def date_from_url(href: str) -> datetime | None:
+def date_from_url(href: str) -> Optional[datetime]:
     """Parse the date embedded in a Guardian URL path (e.g. /2026/apr/27/)."""
     m = _URL_DATE_RE.search(href)
     if not m:
@@ -94,7 +91,8 @@ def date_from_url(href: str) -> datetime | None:
         return None
 
 
-def date_from_str(raw_dt: str | None) -> datetime | None:
+def date_from_str(raw_dt: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO 8601 datetime string."""
     if not raw_dt:
         return None
     try:
@@ -104,7 +102,16 @@ def date_from_str(raw_dt: str | None) -> datetime | None:
         return None
 
 
-def extract_pub_date(page) -> datetime | None:
+def extract_pub_date(page) -> Optional[datetime]:
+    """
+    Extract publication date from a Guardian article page.
+
+    Tries three strategies in order:
+      1. JSON-LD structured data
+      2. article:published_time meta tag
+      3. article-scoped <time datetime> elements
+    """
+    # Strategy 1 — JSON-LD structured data
     try:
         blobs = page.eval_on_selector_all(
             'script[type="application/ld+json"]',
@@ -121,6 +128,7 @@ def extract_pub_date(page) -> datetime | None:
     except Exception:
         pass
 
+    # Strategy 2 — article:published_time meta tag
     try:
         meta = page.get_attribute('meta[property="article:published_time"]', "content")
         if meta:
@@ -129,6 +137,7 @@ def extract_pub_date(page) -> datetime | None:
     except Exception:
         pass
 
+    # Strategy 3 — article-scoped <time> elements
     try:
         attrs = page.eval_on_selector_all(
             "article time[datetime]",
@@ -149,14 +158,22 @@ def extract_pub_date(page) -> datetime | None:
     return None
 
 
-# ---- Scraping Logic ------------------------------------------------------
-def collect_links_paginated(page, url: str, max_pages: int = 10, cutoff: datetime = None) -> list[dict]:
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
 
-    all_links: list[dict] = []
+def collect_links_paginated(
+    page,
+    url: str,
+    max_pages: int = 10,
+    cutoff: Optional[datetime] = None
+) -> List[Dict]:
+    """Paginate through a Guardian listing page and collect valid article links."""
+    all_links: List[Dict] = []
 
     for page_num in range(1, max_pages + 1):
         paginated_url = f"{url}?page={page_num}"
-        print(f"  Scanning: {paginated_url}")
+        logger.info("Scanning: %s", paginated_url)
 
         try:
             page.goto(paginated_url, wait_until="domcontentloaded", timeout=30_000)
@@ -165,33 +182,27 @@ def collect_links_paginated(page, url: str, max_pages: int = 10, cutoff: datetim
                 page.keyboard.press("End")
                 page.wait_for_timeout(2_000)
         except Exception as exc:
-            print(f"  [WARN] Failed to load {paginated_url}: {exc}")
+            logger.warning("Failed to load %s: %s", paginated_url, exc)
             break
 
         raw_cards = page.eval_on_selector_all("a[href*='/202']", _CARD_JS)
-
         if not raw_cards:
-            print(f"  No links found on page {page_num}, stopping.")
+            logger.info("No links found on page %d — stopping.", page_num)
             break
 
-        page_links: list[dict] = []
+        page_links: List[Dict] = []
 
         for card in raw_cards:
             href = card.get("href", "")
 
-            # Must match article URL pattern
             if not ARTICLE_URL_PATTERN.match(href):
                 continue
-
-            # Skip non-article sections
             if is_excluded_section(href):
                 continue
 
-            # Resolve date — no network calls
             pub_date = date_from_str(card.get("datetime")) or date_from_url(href)
 
-            # Skip links with suspiciously old dates (persistent footer junk
-            # like the 2022 newsletter signup that appears on every page)
+            # Skip persistent footer junk with old dates
             if pub_date and pub_date.year < 2024:
                 continue
 
@@ -210,24 +221,25 @@ def collect_links_paginated(page, url: str, max_pages: int = 10, cutoff: datetim
             if cutoff and datetime.fromisoformat(l["pub_date"]) < cutoff
         ]
 
-        print(f"  Page {page_num}: {len(page_links)} links "
-              f"({len(dated)} dated, {len(old)} older than cutoff)")
-        for l in page_links:
-            label = l["headline"] or l["href"]
+        logger.info(
+            "Page %d: %d links (%d dated, %d older than cutoff)",
+            page_num, len(page_links), len(dated), len(old)
+        )
 
-        # Stop when every dateable link on this page is beyond the cutoff
         if cutoff and dated and len(old) == len(dated):
-            print(f"  All dated links older than cutoff — stopping pagination.")
+            logger.info("All dated links older than cutoff — stopping pagination.")
             break
 
     return all_links
 
 
-def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
+def fetch_article_body(page, url: str) -> Tuple[str, Optional[datetime]]:
+    """Fetch a Guardian article page and extract body text and publication date."""
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=20_000)
         page.wait_for_timeout(2_000)
     except Exception as exc:
+        logger.warning("Error loading article %s: %s", url, exc)
         return f"(Error loading article: {exc})", None
 
     pub_date = extract_pub_date(page)
@@ -240,32 +252,33 @@ def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
         paragraphs = [p for p in paragraphs if not is_boilerplate(p, NEWS_BOILERPLATE_PATTERNS["GUARDIAN"])]
         body = "\n\n".join(paragraphs) if paragraphs else "(Could not extract body)"
     except Exception as exc:
+        logger.warning("Error extracting body from %s: %s", url, exc)
         body = f"(Error extracting body: {exc})"
 
     return body, pub_date
 
 
-def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
-    all_links: list[dict] = []
+def scrape_guardian(max_articles: int = MAX_ARTICLES) -> List[Dict]:
+    """Collect and filter Guardian AU articles using Playwright."""
+    all_links: List[Dict] = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         listing_page = browser.new_page()
 
-        print("\nCollecting article links …\n")
+        logger.info("Collecting article links...")
         for source_url in NEWS_URLS["GUARDIAN"]:
             links = collect_links_paginated(
-                listing_page, source_url, max_pages=10, cutoff=fetch_cutoff_date(7)
+                listing_page, source_url,
+                max_pages=10,
+                cutoff=fetch_cutoff_date(7)
             )
-            print(f"  → {len(links)} links from {source_url}\n")
+            logger.info("%d links from %s", len(links), source_url)
             all_links.extend(links)
 
-        seen_hrefs: set[str] = set()
-        candidates: list[dict] = []
-        rejected = {
-            "duplicate": 0, "short_headline": 0,
-            "keyword": 0, "too_old": 0,
-        }
+        seen_hrefs: set = set()
+        candidates: List[Dict] = []
+        rejected = {"duplicate": 0, "short_headline": 0, "keyword": 0, "too_old": 0}
 
         for link in all_links:
             href = link["href"]
@@ -298,21 +311,21 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
                 "pub_date": pub_date_str,
             })
 
-        print(f"Total links collected : {len(all_links)}")
-        print(f"Rejections            : {rejected}")
-        print(f"Candidates            : {len(candidates)} — fetching top {max_articles}\n")
+        logger.info("Total links collected: %d", len(all_links))
+        logger.info("Rejections: %s", rejected)
+        logger.info("Candidates: %d — fetching top %d", len(candidates), max_articles)
 
         candidates = candidates[:max_articles]
         article_page = browser.new_page()
-        kept: list[dict] = []
+        kept: List[Dict] = []
 
         for i, article in enumerate(candidates):
-            print(f"  [{i+1}/{len(candidates)}] {article['headline'][:65]} …")
+            logger.info("[%d/%d] %s", i + 1, len(candidates), article["headline"][:65])
 
             body, pub_date = fetch_article_body(article_page, article["url"])
             article["body"] = body
 
-            # Precise date from the article page; fall back to listing-page date
+            # Use listing-page date as fallback if article page date not found
             if pub_date is None and article["pub_date"]:
                 try:
                     pub_date = datetime.fromisoformat(article["pub_date"])
@@ -320,10 +333,10 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
                     pass
 
             if pub_date is None:
-                print(f"    → Skipped (could not determine date)")
+                logger.info("Skipped (could not determine date)")
                 continue
             if pub_date < fetch_cutoff_date(7):
-                print(f"    → Skipped (too old: {pub_date.date()})")
+                logger.info("Skipped (too old: %s)", pub_date.date())
                 continue
 
             article["pub_date"] = pub_date.isoformat()
@@ -331,54 +344,26 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> list[dict]:
 
         browser.close()
 
-    print(f"\nArticles kept: {len(kept)}")
+    logger.info("Articles kept: %d", len(kept))
     return kept
 
-# ---- Main ----------------------------------------------------------------
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Playwright-based Guardian AU scraper — PHI / health-tech"
-    )
-    parser.add_argument(
-        "--local",
-        metavar="DIR",
-        nargs="?",
-        const=".",
-        help="Save JSON locally instead of uploading to S3 (default dir: .)",
-    )
-    parser.add_argument(
-        "--max",
-        type=int,
-        default=MAX_ARTICLES,
-        help=f"Max articles to fetch (default: {MAX_ARTICLES})",
-    )
-    args = parser.parse_args()
 
-    articles = scrape_guardian(max_articles=args.max)
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
-    if not articles:
-        print("No matching articles found.")
-    else:
-        content = build_content_list(articles)
-        payload = build_payload(content)
-
-        if args.local is not None:
-            save_local(payload, args.local)
-        else:
-            upload_to_s3(payload)
-
-        print(f"\nDone. {len(articles)} article(s) processed.")
-
-        
 def run(local: Optional[str] = None) -> bool:
-    print("Starting Playwright-based Guardian AU scraper — PHI / health-tech")
+    """Scrape Guardian AU articles and upload to S3 or save locally."""
+    logger.info("Starting Playwright-based Guardian AU scraper")
     articles = scrape_guardian(MAX_ARTICLES)
+
     if not articles:
-        print("No matching articles found.")
+        logger.warning("No matching articles found — skipping.")
         return False
-    else:
-        content = build_content_list(articles)  
-    print(f"\nExtracted {len(content):,} characters of text.")
+
+    content = build_content_list(articles)
+    logger.info("Extracted %d articles.", len(content))
+
     payload = build_payload(
         content,
         SOURCE,
@@ -391,4 +376,9 @@ def run(local: Optional[str] = None) -> bool:
     if local:
         save_local(payload)
     else:
-        upload_to_s3(payload)        
+        upload_to_s3(payload)
+    return True
+
+
+if __name__ == "__main__":
+    run(local="data")

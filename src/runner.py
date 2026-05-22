@@ -41,7 +41,7 @@ class ScraperOrchestrator:
         self.local = local
         self.scrapers = [
             # Public Sentiment
-            ("canstar_health_awards", run_canstar,    TIER.PUBLIC_SENTIMENT),
+            ("canstar_health_awards", run_canstar,     TIER.PUBLIC_SENTIMENT),
             ("ama",                   run_ama,         TIER.PUBLIC_SENTIMENT),
             ("choice_articles",       run_choice,      TIER.PUBLIC_SENTIMENT),
             ("news_articles",         run_news,        TIER.PUBLIC_SENTIMENT),
@@ -54,9 +54,9 @@ class ScraperOrchestrator:
             # Medibank Specific
             ("medibank_asx",          run_medibank_asx,    TIER.MEDIBANK_SPECIFIC),
             ("nib_asx",               run_nib_asx,         TIER.MEDIBANK_SPECIFIC),
-            ("medibank_media",        run_medibank_media,   TIER.MEDIBANK_SPECIFIC),
-            ("hbf_offers",            run_hbf_offers,       TIER.MEDIBANK_SPECIFIC),
-            ("hcf_offers",            run_hcf_offers,       TIER.MEDIBANK_SPECIFIC),
+            ("medibank_media",        run_medibank_media,  TIER.MEDIBANK_SPECIFIC),
+            ("hbf_offers",            run_hbf_offers,      TIER.MEDIBANK_SPECIFIC),
+            ("hcf_offers",            run_hcf_offers,      TIER.MEDIBANK_SPECIFIC),
             # PHI Industry
             ("accc",                  run_accc,          TIER.PHI),
             ("apra",                  run_apra,          TIER.PHI),

@@ -1,41 +1,30 @@
+import logging
 import re
-from typing import Optional, List
-import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from html.parser import HTMLParser
+from typing import Optional, List, Dict
 
+import requests
+
+from ...commons.data import DATE_FORMATS, HEADERS, OZBARGAIN_URL, RSS_FEED_URL
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from ...commons.data import DATE_FORMATS, HEADERS, OZBARGAIN_URL, RSS_FEED_URL
-from ...utils.helpers import build_payload, fetch_run_date, fetch_cutoff_date, save_local, upload_to_s3
+from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_run_date, save_local, upload_to_s3
+from ...utils.html import strip_html
 
-# ---- Config ------------------------------------------------------
 SOURCE = "ozbargain"
 
+NS = {"ozb": OZBARGAIN_URL}
 
-# ---- Helper Functions ------------------------------------------------------
-
-class MLStripper(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.reset()
-        self.parts = []
-
-    def handle_data(self, d):
-        self.parts.append(d)
-
-    def get_data(self):
-        return ''.join(self.parts).strip()
+logger = logging.getLogger(__name__)
 
 
-def strip_html(html: str) -> str:
-    s = MLStripper()
-    s.feed(html)
-    return s.get_data()
-
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def parse_date(date_str: str) -> Optional[datetime]:
+    """Parse a date string using known formats, falling back to fromisoformat."""
     if not date_str:
         return None
     try:
@@ -46,37 +35,39 @@ def parse_date(date_str: str) -> Optional[datetime]:
         return datetime.fromisoformat(date_str.strip())
     except ValueError:
         pass
-    print(f"  Warning: unrecognised date format: {date_str!r}")
+    logger.warning("Unrecognised date format: %r", date_str)
     return None
 
 
-NS = {"ozb": OZBARGAIN_URL}
-
-
 def _ozb_attr(item: ET.Element, tag: str, attr: str) -> Optional[str]:
+    """Extract an attribute from an OzBargain-namespaced XML element."""
     el = item.find(f"ozb:{tag}", NS)
     return (el.get(attr) or "").strip() if el is not None else ""
 
 
 def to_int(val: str) -> int:
+    """Safely convert a string to int, returning 0 on failure."""
     try:
         return int(val)
     except (ValueError, TypeError):
         return 0
 
 
-def parse_vote_count(item: ET.Element) -> Optional[dict]:
+def parse_vote_count(item: ET.Element) -> Dict:
+    """Extract positive, negative and net vote counts from a feed item."""
     pos = to_int(_ozb_attr(item, "meta", "votes-pos"))
     neg = to_int(_ozb_attr(item, "meta", "votes-neg"))
     return {"votes_pos": pos, "votes_neg": neg, "votes_net": pos - neg}
 
 
-def parse_category(item: ET.Element) -> Optional[str]:
+def parse_category(item: ET.Element) -> str:
+    """Extract the category text from a feed item."""
     el = item.find("category", NS)
     return (el.text or "").strip() if el is not None else ""
 
 
 def parse_coupon_code(description_text: str) -> Optional[str]:
+    """Extract a coupon or promo code from deal description text."""
     m = re.search(r"\[([A-Z0-9_\-]{3,30})\]", description_text)
     if m:
         return m.group(1)
@@ -89,12 +80,15 @@ def parse_coupon_code(description_text: str) -> Optional[str]:
 
 
 def is_active(expiry_date: Optional[datetime]) -> bool:
+    """Return True if the deal has not yet expired."""
     if expiry_date is None:
         return False
     return expiry_date > datetime.now(timezone.utc)
 
 
-# ---- Main Scraping Logic ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
 
 def fetch_feed(feed_url: str) -> List[dict]:
     """Fetch and parse OzBargain RSS feed, returning filtered deals."""
@@ -102,21 +96,21 @@ def fetch_feed(feed_url: str) -> List[dict]:
         response = requests.get(feed_url, timeout=10, headers=HEADERS)
         response.raise_for_status()
     except requests.RequestException as e:
-        print(f"Error fetching feed {feed_url}: {e}")
+        logger.error("Error fetching feed %s: %s", feed_url, e)
         return []
 
     try:
         root = ET.fromstring(response.content)
     except ET.ParseError as e:
-        print(f"Error parsing XML from feed {feed_url}: {e}")
+        logger.error("Error parsing XML from feed %s: %s", feed_url, e)
         return []
 
     items = root.findall(".//item")
     if not items:
-        print("No <item> elements found in feed.")
+        logger.warning("No <item> elements found in feed.")
         return []
 
-    print(f"Found {len(items)} items in feed — applying cutoff filter...")
+    logger.info("Found %d items in feed — applying cutoff filter...", len(items))
 
     deals = []
     for item in items:
@@ -133,11 +127,11 @@ def fetch_feed(feed_url: str) -> List[dict]:
         expiry_date = parse_date(expiry_str) if expiry_str else None
         pub_date    = parse_date(pub_date_str)
 
-        within_cutoff = pub_date and pub_date >= fetch_cutoff_date(7)
+        within_cutoff = pub_date and pub_date >= fetch_cutoff_date(30)
         still_active  = is_active(expiry_date)
 
         if not still_active and not within_cutoff:
-            print(f"  Skipped (old & expired): {title}")
+            logger.info("Skipped (old & expired): %s", title)
             continue
 
         vote_count      = parse_vote_count(item)
@@ -160,23 +154,25 @@ def fetch_feed(feed_url: str) -> List[dict]:
             "coupon_code":     coupon_code,
             "description":     description,
         })
-        print(f"  Fetched deal: {title}")
+        logger.info("Fetched deal: %s", title)
 
     return deals
 
 
-# ---- Run ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
 def run(local: Optional[str] = None) -> bool:
     """Scrape OzBargain Medibank deals and upload to S3 or save locally."""
-    print(f"Scraping Medibank deals (OzBargain RSS feed) from: \n  {OZBARGAIN_URL} \n")
+    logger.info("Scraping Medibank deals from OzBargain RSS feed: %s", OZBARGAIN_URL)
     deals = fetch_feed(RSS_FEED_URL)
 
     if not deals:
-        print("No deals found within the cutoff date.")
+        logger.warning("No deals found within the cutoff date.")
         return False
 
-    print(f"\nFound {len(deals)} deals.")
+    logger.info("Found %d deals.", len(deals))
     payload = build_payload(
         deals,
         SOURCE,

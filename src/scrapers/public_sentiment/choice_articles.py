@@ -1,7 +1,8 @@
+import logging
 import re
-from typing import Optional, List
-from urllib.parse import urljoin, urlencode, urlparse
 from datetime import datetime, timezone
+from typing import Optional, List, Dict, Set
+from urllib.parse import urljoin, urlencode, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -10,20 +11,24 @@ from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
 from ...utils.helpers import build_payload, fetch_cutoff_date, fetch_run_date, fetch_url, save_local, upload_to_s3
 
-SOURCE         = "choice"
-URL            = "https://www.choice.com.au"
-MAX_PAGES      = 10
-SEARCH_TERM    = "Medibank"
-SEARCH_TAB     = "articles"
+SOURCE      = "choice"
+URL         = "https://www.choice.com.au"
+MAX_PAGES   = 10
+SEARCH_TERM = "Medibank"
+SEARCH_TAB  = "articles"
+
+logger = logging.getLogger(__name__)
 
 
-# ---- Helper Functions ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def is_within_cutoff(article_date: Optional[datetime]) -> bool:
-    """Return True if article is within the 30-day cutoff."""
+    """Return True if article is within the 30-day cutoff or has no date."""
     if article_date is None:
         return True
-    return article_date >= fetch_cutoff_date(7)
+    return article_date >= fetch_cutoff_date(30)
 
 
 def parse_article_date(soup: BeautifulSoup) -> Optional[datetime]:
@@ -51,9 +56,9 @@ def parse_article_date(soup: BeautifulSoup) -> Optional[datetime]:
     return None
 
 
-def fetch_article_content(article_url: str) -> dict:
+def fetch_article_content(article_url: str) -> Dict:
     """Fetch and extract full text from an article page."""
-    print(f"  Fetching content: {article_url}")
+    logger.info("Fetching content: %s", article_url)
     soup = fetch_url(article_url)
     if soup is None:
         return {"full_text": ""}
@@ -71,7 +76,7 @@ def fetch_article_content(article_url: str) -> dict:
 
 def discover_search_url(base_url: str, search_term: str, tab: str) -> str:
     """Dynamically discover the search URL from the homepage."""
-    print(f"Discovering search URL from homepage: {base_url}")
+    logger.info("Discovering search URL from homepage: %s", base_url)
     soup = fetch_url(base_url)
 
     form_action = None
@@ -86,8 +91,8 @@ def discover_search_url(base_url: str, search_term: str, tab: str) -> str:
 
         if search_form is None:
             for form in soup.find_all("form"):
-                if form.find("input", attrs={"type": "search"}) or \
-                   form.find("input", attrs={"name": "s"}):
+                if (form.find("input", attrs={"type": "search"}) or
+                        form.find("input", attrs={"name": "s"})):
                     search_form = form
                     break
 
@@ -102,17 +107,17 @@ def discover_search_url(base_url: str, search_term: str, tab: str) -> str:
             if search_input and search_input.get("name"):
                 query_param = search_input["name"]
 
-            print(f"Found search form → action='{form_action}', param='{query_param}'")
+            logger.info("Found search form → action='%s', param='%s'", form_action, query_param)
         else:
-            print("No search form found — using base URL as form action.")
+            logger.warning("No search form found — using base URL as form action.")
             form_action = base_url
     else:
-        print("Could not fetch homepage — falling back to default search pattern.")
+        logger.warning("Could not fetch homepage — falling back to default search pattern.")
         form_action = base_url
 
     params = {query_param: search_term, "tab": tab}
     search_url = f"{form_action.rstrip('/')}/?{urlencode(params)}"
-    print(f"  Constructed search URL: {search_url}")
+    logger.info("Constructed search URL: %s", search_url)
     return search_url
 
 
@@ -130,22 +135,25 @@ def get_all_search_page_urls(base_search_url: str, max_pages: int = MAX_PAGES) -
     return urls
 
 
-# ---- Main Scraper ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
 
-def scrape_medibank_articles() -> List[dict]:
+def scrape_medibank_articles() -> List[Dict]:
     """Scrape Medibank-related articles from choice.com.au."""
-    results: List[dict] = []
+    results: List[Dict] = []
 
     base_search_url = discover_search_url(URL, SEARCH_TERM, SEARCH_TAB)
     search_urls = get_all_search_page_urls(base_search_url)
 
     for page_num, search_url in enumerate(search_urls, 1):
-        print(f"\n=== Checking search page {page_num}: {search_url} ===")
+        logger.info("Checking search page %d: %s", page_num, search_url)
         soup = fetch_url(search_url)
         if soup is None:
+            logger.warning("Could not fetch search page %d — skipping.", page_num)
             continue
 
-        article_urls = set()
+        article_urls: Set[str] = set()
         for link_el in soup.select('a[href*="/articles/"]'):
             href = link_el.get("href", "")
             if href.startswith("/"):
@@ -163,13 +171,14 @@ def scrape_medibank_articles() -> List[dict]:
                     ])):
                 article_urls.add(href)
 
-        print(f"  Found {len(article_urls)} potentially relevant articles on this page")
+        logger.info("Found %d potentially relevant articles on page %d", len(article_urls), page_num)
 
         for article_url in sorted(article_urls):
             article_content = fetch_article_content(article_url)
 
             soup_article = fetch_url(article_url)
             if soup_article is None:
+                logger.warning("Could not fetch article: %s — skipping.", article_url)
                 continue
 
             title_el = (
@@ -184,7 +193,7 @@ def scrape_medibank_articles() -> List[dict]:
             date_str = f"{article_date.day} {article_date.strftime('%B %Y')}" if article_date else None
 
             if not is_within_cutoff(article_date):
-                print(f"    Skipped (before cutoff): {title}")
+                logger.info("Skipped (before cutoff): %s", title)
                 continue
 
             summary = ""
@@ -204,18 +213,20 @@ def scrape_medibank_articles() -> List[dict]:
     return results
 
 
-# ---- Run ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
 def run(local: Optional[str] = None) -> bool:
     """Scrape Choice articles and upload to S3 or save locally."""
-    print("Starting Medibank article scrape from choice.com.au...")
+    logger.info("Starting Medibank article scrape from choice.com.au")
     articles = scrape_medibank_articles()
 
     if not articles:
-        print("No articles found within the cutoff date.")
+        logger.warning("No articles found within the cutoff date.")
         return False
 
-    print(f"\nSuccessfully scraped {len(articles)} recent Medibank-related articles.")
+    logger.info("Successfully scraped %d recent Medibank-related articles.", len(articles))
     payload = build_payload(
         articles,
         SOURCE,
@@ -230,3 +241,7 @@ def run(local: Optional[str] = None) -> bool:
     else:
         upload_to_s3(payload)
     return True
+
+
+if __name__ == "__main__":
+    run(local="data")

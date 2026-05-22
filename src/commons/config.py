@@ -1,3 +1,3 @@
-AWS_REGION = "ap-southeast-2"
-BUCKET = "p000268ds-medibank-intelligence-us"
+AWS_REGION = "us-east-1"
+BUCKET = "p000268ds-medibank-intelligence-us-test"
 EXPECTED_BUCKET_OWNER = "123456789012"
