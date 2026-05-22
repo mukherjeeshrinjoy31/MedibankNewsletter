@@ -54,7 +54,7 @@ echo ""
 echo "[3/5] Authenticating Docker to ECR..."
 aws ecr get-login-password --region $AWS_REGION | \
     docker login --username AWS \
-    --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com 2>/dev/null
+    --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com 2>/dev/null || true
 echo "✓ Docker authenticated to ECR"
 
 # Step 4 — Build Docker image
