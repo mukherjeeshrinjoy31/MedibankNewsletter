@@ -5,16 +5,18 @@ echo "=================================================="
 echo "  Create ECS Fargate Cluster and Task Definition"
 echo "=================================================="
 
-# ---- Config ----
-AWS_REGION="us-east-1"
-CLUSTER_NAME="medibank-newsletter-cluster"
-TASK_FAMILY="medibank-newsletter-task"
-CONTAINER_NAME="medibank-newsletter"
-ECR_IMAGE="339712734812.dkr.ecr.us-east-1.amazonaws.com/medibank-newsletter:latest"
-LOG_GROUP="/ecs/medibank-newsletter"
+# ---- Load config ----
+PROJECT_DIR="$HOME/MedibankNewsletter"
+CONFIG_FILE="$PROJECT_DIR/deployment/config.env"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "ERROR: config.env not found at $CONFIG_FILE"
+    exit 1
+fi
+source $CONFIG_FILE
+echo "✓ Config loaded"
 
 # ---- Prompt for AWS credentials ----
-read -p "Enter AWS Account ID: " AWS_ACCOUNT_ID
 read -p "Enter AWS Access Key ID: " AWS_ACCESS_KEY_ID
 read -s -p "Enter AWS Secret Access Key: " AWS_SECRET_ACCESS_KEY
 echo ""
@@ -28,7 +30,7 @@ export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
 export AWS_DEFAULT_REGION=$AWS_REGION
 
 # Lab role ARN
-LAB_ROLE_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:role/LabRole"
+LAB_ROLE_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:role/$LAB_ROLE_NAME"
 
 # Step 1 — Create CloudWatch log group
 echo ""
@@ -44,7 +46,9 @@ echo "[2/4] Creating ECS cluster..."
 aws ecs create-cluster \
     --cluster-name $CLUSTER_NAME \
     --capacity-providers FARGATE \
-    --region $AWS_REGION 2>/dev/null || echo "Cluster already exists — skipping."
+    --region $AWS_REGION \
+    --query "cluster.clusterArn" \
+    --output text 2>/dev/null || echo "Cluster already exists — skipping."
 echo "✓ ECS cluster ready: $CLUSTER_NAME"
 
 # Step 3 — Register task definition
@@ -103,6 +107,4 @@ echo "Task Family:    $TASK_FAMILY"
 echo "ECR Image:      $ECR_IMAGE"
 echo "VPC ID:         $VPC_ID"
 echo "Subnet ID:      $SUBNET_ID"
-echo ""
-echo "Save VPC and Subnet IDs — needed for EventBridge."
 echo "=================================================="

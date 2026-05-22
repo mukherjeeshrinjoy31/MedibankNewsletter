@@ -36,7 +36,8 @@ echo "[3/5] Cloning repository..."
 if [ -d "$PROJECT_DIR" ]; then
     echo "Directory exists — pulling latest..."
     cd "$PROJECT_DIR"
-    git pull origin "$BRANCH"
+    git fetch origin "$BRANCH"
+    git reset --hard origin/"$BRANCH"
 else
     git clone -b "$BRANCH" "$GITHUB_REPO" "$PROJECT_DIR"
 fi

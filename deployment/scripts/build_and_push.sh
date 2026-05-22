@@ -5,15 +5,20 @@ echo "=================================================="
 echo "  Build Docker Image and Push to ECR"
 echo "=================================================="
 
-# ---- Config ----
-AWS_REGION="us-east-1"
-ECR_REPO_NAME="medibank-newsletter"
+# ---- Load config ----
 PROJECT_DIR="$HOME/MedibankNewsletter"
+CONFIG_FILE="$PROJECT_DIR/deployment/config.env"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "ERROR: config.env not found at $CONFIG_FILE"
+    exit 1
+fi
+source $CONFIG_FILE
+echo "✓ Config loaded"
 
 # ---- Prompt for branch and AWS credentials ----
 read -p "Enter branch name (default: main): " BRANCH
 BRANCH=${BRANCH:-main}
-read -p "Enter AWS Account ID: " AWS_ACCOUNT_ID
 read -p "Enter AWS Access Key ID: " AWS_ACCESS_KEY_ID
 read -s -p "Enter AWS Secret Access Key: " AWS_SECRET_ACCESS_KEY
 echo ""
@@ -39,7 +44,9 @@ echo ""
 echo "[2/5] Creating ECR repository..."
 aws ecr create-repository \
     --repository-name $ECR_REPO_NAME \
-    --region $AWS_REGION 2>/dev/null || echo "Repository already exists — skipping."
+    --region $AWS_REGION \
+    --query "repository.repositoryUri" \
+    --output text 2>/dev/null || echo "Repository already exists — skipping."
 echo "✓ ECR repository ready"
 
 # Step 3 — Authenticate Docker to ECR
@@ -47,7 +54,7 @@ echo ""
 echo "[3/5] Authenticating Docker to ECR..."
 aws ecr get-login-password --region $AWS_REGION | \
     docker login --username AWS \
-    --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+    --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com 2>/dev/null
 echo "✓ Docker authenticated to ECR"
 
 # Step 4 — Build Docker image
@@ -72,6 +79,4 @@ echo "=================================================="
 echo ""
 echo "ECR Image URI:"
 echo "  $ECR_URI:latest"
-echo ""
-echo "Save this URI — needed for ECS task definition."
 echo "=================================================="
