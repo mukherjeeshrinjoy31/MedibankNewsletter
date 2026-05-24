@@ -42,35 +42,35 @@ class ScraperOrchestrator:
         self.local = local
         self.scrapers = [
             # Public Sentiment
-            #("canstar_health_awards", run_canstar,     TIER.PUBLIC_SENTIMENT),
-            #("ama",                   run_ama,         TIER.PUBLIC_SENTIMENT),
-            #("choice_articles",       run_choice,      TIER.PUBLIC_SENTIMENT),
+            ("canstar_health_awards", run_canstar,     TIER.PUBLIC_SENTIMENT),
+            ("ama",                   run_ama,         TIER.PUBLIC_SENTIMENT),
+            ("choice_articles",       run_choice,      TIER.PUBLIC_SENTIMENT),
             ("news_articles",         run_news,        TIER.PUBLIC_SENTIMENT),
             ("abc_news",              run_abc_news,    TIER.PUBLIC_SENTIMENT),
-            #("ozbargain_deals",       run_ozbargain,   TIER.PUBLIC_SENTIMENT),
+            ("ozbargain_deals",       run_ozbargain,   TIER.PUBLIC_SENTIMENT),
             ("sbs_news",              run_sbs_news,    TIER.PUBLIC_SENTIMENT),
             ("the_guardian_au",       run_guardian,    TIER.PUBLIC_SENTIMENT),
             # Stock Market
             
-            # ("stock_prices",          run_stock_prices, TIER.COMPETITOR),
-            # # Medibank Specific
-            # ("medibank_asx",          run_medibank_asx,    TIER.MEDIBANK_SPECIFIC),
-            # ("nib_asx",               run_nib_asx,         TIER.MEDIBANK_SPECIFIC),
-            # ("medibank_media",        run_medibank_media,  TIER.MEDIBANK_SPECIFIC),
-            # ("hbf_offers",            run_hbf_offers,      TIER.MEDIBANK_SPECIFIC),
-            # ("hcf_offers",            run_hcf_offers,      TIER.MEDIBANK_SPECIFIC),
-            # # PHI Industry
-            # ("accc",                  run_accc,          TIER.PHI),
-            # ("apra",                  run_apra,          TIER.PHI),
-            # ("apra_annual",           run_apra_annual,   TIER.PHI),
-            # ("health_dept",           run_health_dept,   TIER.PHI),
-            # ("legislation",           run_legislation,   TIER.PHI),
-            # ("mbs",                   run_mbs,           TIER.PHI),
-            # ("newsrooms",             run_newsrooms,     TIER.PHI),
-            # ("ombudsman",             run_ombudsman,     TIER.PHI),
-            # ("privatehealth",         run_privatehealth, TIER.PHI),
-            # # Macro
-            # ("abs",                   run_abs,           TIER.MACRO),
+            ("stock_prices",          run_stock_prices, TIER.COMPETITOR),
+            # Medibank Specific
+            ("medibank_asx",          run_medibank_asx,    TIER.MEDIBANK_SPECIFIC),
+            ("nib_asx",               run_nib_asx,         TIER.MEDIBANK_SPECIFIC),
+            ("medibank_media",        run_medibank_media,  TIER.MEDIBANK_SPECIFIC),
+            ("hbf_offers",            run_hbf_offers,      TIER.MEDIBANK_SPECIFIC),
+            ("hcf_offers",            run_hcf_offers,      TIER.MEDIBANK_SPECIFIC),
+            # PHI Industry
+            ("accc",                  run_accc,          TIER.PHI),
+            ("apra",                  run_apra,          TIER.PHI),
+            ("apra_annual",           run_apra_annual,   TIER.PHI),
+            ("health_dept",           run_health_dept,   TIER.PHI),
+            ("legislation",           run_legislation,   TIER.PHI),
+            ("mbs",                   run_mbs,           TIER.PHI),
+            ("newsrooms",             run_newsrooms,     TIER.PHI),
+            ("ombudsman",             run_ombudsman,     TIER.PHI),
+            ("privatehealth",         run_privatehealth, TIER.PHI),
+            # Macro
+            ("abs",                   run_abs,           TIER.MACRO),
         ]
 
     def run_all(self):
