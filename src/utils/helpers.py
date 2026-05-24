@@ -14,7 +14,7 @@ import pdfplumber
 import requests
 
 from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
-from ..commons.data import HEADERS, NEWS_KEYWORDS
+from ..commons.data import HEADERS, NEWS_KEYWORDS, WHOLE_WORD_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -140,12 +140,15 @@ def clean_text(text: str, boiler_plate: List[str]) -> str:
         text = text.replace(phrase, "")
     return " ".join(text.split()).strip()
 
+def keyword_found(kw: str, text: str) -> bool:
+    if kw in WHOLE_WORD_KEYWORDS:
+        return bool(re.search(rf'\b{re.escape(kw)}\b', text))
+    return kw in text
 
 def matches_keywords(text: str) -> bool:
     """Return True if text matches at least one keyword group."""
     text = text.lower()
-    groups_matched = sum(any(kw in text for kw in kws) for kws in NEWS_KEYWORDS.values())
-    return groups_matched >= 1
+    return any(keyword_found(kw, text) for kw in NEWS_KEYWORDS)
 
 
 def is_boilerplate(text: str, boilerplate_patterns: List[str]) -> bool:

@@ -94,22 +94,16 @@ MACRO_NOISE_TAGS = {"script", "style", "noscript", "nav", "footer", "header", "f
 NEWS_URLS = {
     "ABC" : [
         "https://www.abc.net.au/news/health",
-        "https://www.abc.net.au/news/",
-        "https://www.abc.net.au/news/australia/",
-        "https://www.abc.net.au/news/search/?query=health+australia",
-        "https://www.abc.net.au/news/search/?query=private+health+insurance"
+        "https://www.abc.net.au/news/topic/health-insurance",
     ],
     "SBS" : [
         "https://www.sbs.com.au/news/collection/health-and-wellbeing",
         "https://www.sbs.com.au/news/tag/subject/health",
-        "https://www.sbs.com.au/news/collection/just-in-articles",
-        "https://www.sbs.com.au/news/tag/section/life",
-        "https://www.sbs.com.au/search?query=private+health+insurance&sort=date&filter=news"
+        "https://www.sbs.com.au/news/tag/subject/health-care-costs"
     ],
     "GUARDIAN" : [
         "https://www.theguardian.com/australia-news/health",
-        "https://www.theguardian.com/australia-news",
-        "https://www.theguardian.com/au/lifeandstyle",
+        "https://www.theguardian.com/money/healthinsurance",
     ]
 }
 
@@ -260,19 +254,14 @@ BOILERPLATE = {
 # News Keywords (Sorted)
 # ============================
 
-NEWS_KEYWORDS = {
-    "phi": [
+NEWS_KEYWORDS = [
         "medibank", "bupa", "nib", "hcf", "hbf",
         "private health insurance", "health fund",
         "health cover", "health insurer", "private health"
-    ],
-    "health_tech": [
-        "health technology", "digital health", "health ai",
-        "medical ai", "health innovation", "medtech",
-        "telehealth", "health data", "wearable health",
-        "health automation", "clinical ai", "precision medicine",
-    ],
-}
+    ]
+
+# Keywords that need whole-word matching (short words that appear as substrings)
+WHOLE_WORD_KEYWORDS = {"nib", "hcf", "hbf", "bupa"}
 
 # ============================
 # Offer Keywords (Sorted)

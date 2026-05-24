@@ -176,11 +176,11 @@ def collect_links_paginated(
         logger.info("Scanning: %s", paginated_url)
 
         try:
-            page.goto(paginated_url, wait_until="domcontentloaded", timeout=30_000)
-            page.wait_for_timeout(3_000)
+            page.goto(paginated_url, wait_until="domcontentloaded", timeout=15_000)
+            page.wait_for_timeout(1_000)
             for _ in range(SCROLL_PASSES):
                 page.keyboard.press("End")
-                page.wait_for_timeout(2_000)
+                page.wait_for_timeout(1_000)
         except Exception as exc:
             logger.warning("Failed to load %s: %s", paginated_url, exc)
             break
@@ -236,8 +236,8 @@ def collect_links_paginated(
 def fetch_article_body(page, url: str) -> Tuple[str, Optional[datetime]]:
     """Fetch a Guardian article page and extract body text and publication date."""
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20_000)
-        page.wait_for_timeout(2_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+        page.wait_for_timeout(1_000)
     except Exception as exc:
         logger.warning("Error loading article %s: %s", url, exc)
         return f"(Error loading article: {exc})", None
@@ -275,16 +275,21 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> List[Dict]:
             )
             logger.info("%d links from %s", len(links), source_url)
             all_links.extend(links)
+        
+        listing_page.close()
 
         seen_hrefs: set = set()
         candidates: List[Dict] = []
-        rejected = {"duplicate": 0, "short_headline": 0, "keyword": 0, "too_old": 0}
+        rejected = {"duplicate": 0, "short_headline": 0, "keyword": 0}
 
         for link in all_links:
+
+            if len(candidates) >= max_articles:
+                break
+
             href = link["href"]
             headline = link["headline"]
             card_text = link.get("cardText", "")
-            pub_date_str = link.get("pub_date")
 
             if href in seen_hrefs:
                 rejected["duplicate"] += 1
@@ -292,45 +297,23 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> List[Dict]:
             if len(headline) < 15:
                 rejected["short_headline"] += 1
                 continue
+
+            seen_hrefs.add(href)
+            url = f"https://www.theguardian.com{href}"
+
+            article_page = browser.new_page()
+            try:
+                body, pub_date = fetch_article_body(article_page, url)
+            except Exception as exc:
+                logger.info("Failed to fetch body for %s: %s", url, exc)
+                continue
+            finally:
+                article_page.close()
+
+
             if not matches_keywords(headline + " " + card_text):
                 rejected["keyword"] += 1
                 continue
-            if pub_date_str:
-                try:
-                    if datetime.fromisoformat(pub_date_str) < fetch_cutoff_date(7):
-                        rejected["too_old"] += 1
-                        continue
-                except Exception:
-                    pass
-
-            seen_hrefs.add(href)
-            candidates.append({
-                "headline": headline,
-                "url": f"https://www.theguardian.com{href}",
-                "body": "",
-                "pub_date": pub_date_str,
-            })
-
-        logger.info("Total links collected: %d", len(all_links))
-        logger.info("Rejections: %s", rejected)
-        logger.info("Candidates: %d — fetching top %d", len(candidates), max_articles)
-
-        candidates = candidates[:max_articles]
-        article_page = browser.new_page()
-        kept: List[Dict] = []
-
-        for i, article in enumerate(candidates):
-            logger.info("[%d/%d] %s", i + 1, len(candidates), article["headline"][:65])
-
-            body, pub_date = fetch_article_body(article_page, article["url"])
-            article["body"] = body
-
-            # Use listing-page date as fallback if article page date not found
-            if pub_date is None and article["pub_date"]:
-                try:
-                    pub_date = datetime.fromisoformat(article["pub_date"])
-                except Exception:
-                    pass
 
             if pub_date is None:
                 logger.info("Skipped (could not determine date)")
@@ -339,13 +322,19 @@ def scrape_guardian(max_articles: int = MAX_ARTICLES) -> List[Dict]:
                 logger.info("Skipped (too old: %s)", pub_date.date())
                 continue
 
-            article["pub_date"] = pub_date.isoformat()
-            kept.append(article)
+            candidates.append({
+                "headline": headline,
+                "url": url,
+                "body": body,
+                "pub_date": pub_date.isoformat() if pub_date else None,
+            })
 
         browser.close()
 
-    logger.info("Articles kept: %d", len(kept))
-    return kept
+    logger.info("Total links: %d", len(all_links))
+    logger.info("Rejections: %s", rejected)
+    logger.info("Articles kept: %d", len(candidates))
+    return candidates
 
 
 # ---------------------------------------------------------------------------

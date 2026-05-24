@@ -118,10 +118,13 @@ def collect_links_paginated(
             """elements => elements.map(el => ({
                 text: el.innerText.trim().replace(/^SBS NEWS\\s*/i, '').trim(),
                 href: el.getAttribute('href'),
-                parentText: el.closest('article')?.innerText
-                            || el.closest('[class*=\"card\"]')?.innerText
-                            || el.closest('li')?.innerText
-                            || el.parentElement?.innerText
+                parentText: el.closest('article')
+                            ?.querySelector('h1,h2,h3,h4')
+                            ?.innerText?.trim()
+                            || el.closest('[class*="card"]')
+                            ?.querySelector('h1,h2,h3,h4')
+                            ?.innerText?.trim()
+                            || el.parentElement?.innerText?.trim()
                             || ''
             }))"""
         )
@@ -142,7 +145,7 @@ def collect_links_paginated(
 
             pub_date = None
             try:
-                page.goto(article_url, wait_until="domcontentloaded", timeout=20_000)
+                page.goto(article_url, wait_until="domcontentloaded", timeout=15_000)
                 page.wait_for_timeout(1_500)
                 pub_date = extract_pub_date_from_page(page)
             except Exception as exc:
@@ -155,7 +158,7 @@ def collect_links_paginated(
                 )
                 stop = True
                 try:
-                    page.goto(paginated_url, wait_until="domcontentloaded", timeout=30_000)
+                    page.goto(paginated_url, wait_until="domcontentloaded", timeout=15_000)
                 except Exception:
                     pass
                 break
@@ -175,8 +178,8 @@ def collect_links_paginated(
 def fetch_article_body(page, url: str) -> Tuple[str, Optional[datetime]]:
     """Fetch an SBS article page and extract body text and publication date."""
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20_000)
-        page.wait_for_timeout(2_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+        page.wait_for_timeout(1_000)
     except Exception as exc:
         logger.warning("Error loading article %s: %s", url, exc)
         return f"(Error loading article: {exc})", None
@@ -214,18 +217,26 @@ def scrape_sbs(max_articles: int = MAX_ARTICLES) -> List[Dict]:
             )
             logger.info("Got %d links from %s", len(links), source_url)
             all_links.extend(links)
+        
+        listing_page.close()
 
         seen_hrefs: set = set()
         candidates: List[Dict] = []
         rejected = {"url_pattern": 0, "duplicate": 0, "short_headline": 0, "keyword": 0}
 
-        for link in all_links:
+        for i, link in enumerate(all_links):
+
+            if len(candidates) >= max_articles:
+                break
+
             href = link.get("href", "")
             headline = link.get("text", "").strip()
             parent_text = link.get("parentText", "").strip()
 
             if href.startswith("https://www.sbs.com.au"):
                 href = href[len("https://www.sbs.com.au"):]
+            href = href.rstrip("/")
+
             if not ARTICLE_URL_PATTERN.match(href):
                 rejected["url_pattern"] += 1
                 continue
@@ -235,34 +246,24 @@ def scrape_sbs(max_articles: int = MAX_ARTICLES) -> List[Dict]:
             if len(headline) < 15:
                 rejected["short_headline"] += 1
                 continue
-            if not matches_keywords(headline + " " + parent_text):
-                rejected["keyword"] += 1
-                continue
 
             seen_hrefs.add(href)
-            candidates.append({
-                "headline": headline,
-                "url": f"https://www.sbs.com.au{href}",
-                "body": "",
-                "pub_date": None,
-            })
+            url = f"https://www.sbs.com.au{href}"
 
-        logger.info("Total links: %d", len(all_links))
-        logger.info("Rejections: %s", rejected)
-        logger.info("After keyword filter: %d candidate(s). Fetching top %d...", len(candidates), max_articles)
-
-        candidates = candidates[:max_articles]
-        article_page = browser.new_page()
-        kept: List[Dict] = []
-
-        for i, article in enumerate(candidates):
-            label = article["headline"][:65]
-            logger.info("[%d/%d] %s", i + 1, len(candidates), label)
-
-            body, pub_date = fetch_article_body(article_page, article["url"])
-            article["body"] = body
-            article["pub_date"] = pub_date
-
+            article_page = browser.new_page()
+            try:
+                body, pub_date = fetch_article_body(article_page, url)
+            except Exception as exc:
+                logger.info("Failed to fetch body for %s: %s", url, exc)
+                continue
+            finally:
+                article_page.close()
+            
+            if not matches_keywords(headline + " " + parent_text + " " + body):
+                rejected["keyword"] += 1
+                continue
+            
+            logger.info("[%d] %s", i + 1, headline)
             if pub_date is None:
                 logger.info("Skipped (could not determine date)")
                 continue
@@ -270,13 +271,19 @@ def scrape_sbs(max_articles: int = MAX_ARTICLES) -> List[Dict]:
                 logger.info("Skipped (too old: %s)", pub_date.date())
                 continue
 
-            article["pub_date"] = pub_date.isoformat()
-            kept.append(article)
+            candidates.append({
+                "headline": headline,
+                "url": url,
+                "body": body,
+                "pub_date": pub_date.isoformat() if pub_date else None,
+            })
 
         browser.close()
 
-    logger.info("Articles kept after date filter: %d", len(kept))
-    return kept
+    logger.info("Total links: %d", len(all_links))
+    logger.info("Rejections: %s", rejected)
+    logger.info("Articles kept: %d", len(candidates))
+    return candidates
 
 
 def build_content_list(articles: List[Dict]) -> List[Dict]:
