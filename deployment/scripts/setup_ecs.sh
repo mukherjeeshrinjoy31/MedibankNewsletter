@@ -58,8 +58,8 @@ aws ecs register-task-definition \
     --family $TASK_FAMILY \
     --network-mode awsvpc \
     --requires-compatibilities FARGATE \
-    --cpu "1024" \
-    --memory "2048" \
+    --cpu "2048" \
+    --memory "4096" \
     --execution-role-arn $LAB_ROLE_ARN \
     --task-role-arn $LAB_ROLE_ARN \
     --container-definitions "[
