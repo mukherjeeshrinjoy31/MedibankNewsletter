@@ -68,6 +68,18 @@ BOILERPLATE_PATTERNS = [
         r'\[View details\]',
         r'\|\s*loading\s*\|']
 
+TC_END_BOILERPLATE = re.compile(
+    r'(?:'
+    r'All\s+Rights\s+Reserved'
+    r'|©\s*\d{4}\s+Hive\s+Empire'
+    r'|Terms\s+of\s+service\s+Privacy'
+    r'|ABN\s+\d+'
+    r'|Level\s+\d+,\s+\d+\s+York\s+St'
+    r'|Australia\s+Canada\s+United\s+Kingdom\s+United\s+States'
+    r')',
+    re.I
+)
+
 REWARDS_COVER = {
     "hospital & extras":  "hospital + extras",
     "hospital + extras":  "hospital + extras", # 2 aliases for same cover type since the site uses both terms inconsistently
@@ -102,8 +114,7 @@ def make_browser_context(playwright):
         extra_http_headers={"Accept-Language": "en-AU,en;q=0.9"},
     )
     ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    return browser, ctx
-
+    return browser, ctx       
 
 # ---- Core Functions for Scraoing ---------------------------------------------
 def load_results_page(page, cover_params: dict):
@@ -161,13 +172,13 @@ def filter_by_provider(page, brand_label: str) -> bool:
         return False
 
 
+
 def clear_provider_filter(page, url: str):
     page.goto(url, timeout=30000, wait_until="domcontentloaded")
     time.sleep(5)
 
 
 def parse_offer_text(raw_text: str) -> dict:
-
     for pattern in BOILERPLATE_PATTERNS:
         # Remove boilerplate phrases that could interfere with offer parsing
         raw_text = re.sub(pattern, '', raw_text, flags=re.I)
@@ -251,116 +262,224 @@ def extract_offers(page, cover_type_name: str, cover_params: dict) -> list:
 
     for brand_key, search_name in BRANDS.items():
         applied = filter_by_provider(page, search_name)
-        if not applied:
-            results.append({
-                "brand": brand_key,
-                "cover_type": cover_type_name,
-                "cover_category": cover_params.get("covercategory", ""),
-                "weeks_free": "",
-                "waiting_waive": "",
-                "other": "",
-                "end_date": ""
-            })
-            clear_provider_filter(page, base_url)
-            continue
-
-        time.sleep(5)
-        html = page.content()
-        soup = BeautifulSoup(html, "html.parser")
-        rows = soup.select("table tr")
-
+        
         offer_data = {
             "brand": brand_key,
             "cover_type": cover_type_name,
             "cover_category": cover_params.get("covercategory", ""),
-            "weeks_free": "",
-            "waiting_waive": "",
-            "other": "",
-            "end_date": ""
+            "weeks_free": "", "waiting_waive": "", "other": "", 
+            "end_date": "", "t_and_c": ""
         }
 
-        if rows and len(rows) > 1:
-            first_row_text = rows[1].get_text(" ", strip=True)
-            offer_data.update(parse_offer_text(first_row_text))
+        if applied:
+            html = page.content()
+            soup = BeautifulSoup(html, "html.parser")
+            rows = soup.select("table tr")
+
+            if rows and len(rows) > 1:
+                first_row_text = rows[1].get_text(" ", strip=True)
+                offer_data.update(parse_offer_text(first_row_text))
+        else:
+            print(f"     [warn] Could not filter {brand_key}")
 
         results.append(offer_data)
         clear_provider_filter(page, base_url)
-        time.sleep(5)
 
     return results
 
 # ---- Finder Rewards Scraping and Annotation --------------------------------
+def scrape_reward_detail_tc(page, detail_url: str) -> str:
+    try:
+        print(f"  → Scraping T&C from: {detail_url}")
+        page.goto(detail_url, timeout=30000, wait_until="domcontentloaded")
+        try:
+            page.wait_for_selector("h1, h2, h3", timeout=10000)
+        except PWTimeout:
+            pass
+ 
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
+        full_text = soup.get_text(" ", strip=True)
+        full_text = re.sub(r'\s+', ' ', full_text)
+ 
+        # Truncate at footer boilerplate
+        sentinel = TC_END_BOILERPLATE.search(full_text)
+        if sentinel:
+            print(f"    → Sentinel hit at char {sentinel.start()}, truncating (total: {len(full_text)})")
+            full_text = full_text[:sentinel.start()]
+ 
+        # Split full_text into labelled segments by finding every label position
+        label_pat = re.compile(
+            r'(Eligibility Requirements?|Eligibility|Excluded Covers?|Payment Requirement|Reward Fulfilment Date|Stackable Offer)\s*:\s*',
+            re.I
+        )
+        positions = [(m.group(1), m.end()) for m in label_pat.finditer(full_text)]
+ 
+        if not positions:
+            print(f"    [warn] No labelled T&C fields found")
+            return "See Finder Rewards page for full T&Cs"
+ 
+        # For each label, value runs from its end position to the start of the next label
+        # For the last label, value runs to end of full_text — no truncation
+        seen_labels = set()
+        parts = []
+        for i, (label, value_start) in enumerate(positions):
+            label_norm = label.lower().strip()
+            if label_norm in seen_labels:
+                continue
+            seen_labels.add(label_norm)
+ 
+            if i + 1 < len(positions):
+                # Find where the next label starts (re-search to get the match start)
+                next_label_match = label_pat.search(full_text, value_start)
+                value = full_text[value_start:next_label_match.start()].strip().rstrip('|').strip()
+            else:
+                # Last field — take everything to end of string
+                value = full_text[value_start:].strip().rstrip('|').strip()
+ 
+            if value:
+                parts.append(f"{label}: {value}")
+ 
+        result = " | ".join(parts)
+        print(f"    → Extracted {len(parts)} T&C fields: {list(seen_labels)}")
+        return result
+ 
+    except Exception as e:
+        print(f"  [error] T&C scrape failed: {e}")
+        return ""
+
+
 def scrape_finder_rewards(page) -> list:
     """
-    Load the Finder Rewards page and extract health-insurance-relevant rewards.
+    Two-pass Finder Rewards scraper:
+      Pass 1 — stay on the rewards page, collect all card metadata + detail URLs.
+      Pass 2 — iterate the URL list and fetch T&Cs without needing to return to
+               the rewards page between cards (avoids stale element handles).
     """
     print("Scraping Finder Rewards page...")
-    page.goto(FINDER_REWARDS_URL, timeout=30000, wait_until="domcontentloaded")
-    time.sleep(3)
- 
+    page.goto(FINDER_REWARDS_URL, timeout=45000, wait_until="domcontentloaded")
+    time.sleep(5)
+
     try:
-        page.click("button:has-text('Accept')", timeout=4000)
+        page.click("button:has-text('Accept')", timeout=5000)
         time.sleep(1)
     except PWTimeout:
         pass
- 
-    html = page.content()
-    soup = BeautifulSoup(html, "html.parser")
- 
-    rewards = []
+
     end_date_pat = re.compile(r'ends?\s+(\d{1,2}\s+[a-z]{3,}\s+\d{4})', re.I)
-    get_with_pat = re.compile(r'Get\s+(?:up to\s+)?\$(\d+)\s+with\s+(.+)', re.I)
- 
-    for el in soup.find_all(string=get_with_pat):
-        m = get_with_pat.search(el)
-        if not m:
-            continue
- 
-        amount_val = f"${m.group(1)}"
-        brand_raw  = m.group(2).strip()
- 
-        brand_key = None
-        for internal_key in BRANDS:
-            if internal_key.lower() in brand_raw.lower():
-                brand_key = internal_key
-                break
-        if not brand_key:
-            continue
- 
-        # Walk up the DOM to find a container holding both category and end date
-        container = el.parent
-        for _ in range(6):
-            container_text = container.get_text(" ", strip=True).lower()
-            if "health insurance" in container_text and end_date_pat.search(container_text):
-                break
-            if container.parent:
-                container = container.parent
+    get_with_pat = re.compile(r'Get\s+(?:up to\s+)?\$(\d+)', re.I)
+    seen = set()
+
+    reward_cards = page.query_selector_all(
+        "[data-testid*='rewards_banner_card_list--card'], "
+        "[data-niche-group='Health insurance']"
+    )
+    if not reward_cards:
+        reward_cards = page.query_selector_all(".rewards-banner-card-list__card-wrapper")
+
+    print(f"  Found {len(reward_cards)} potential cards - scanning...")
+
+    pending = []  # list of dicts: all metadata + detail_url, t_and_c
+
+    for card in reward_cards:
+        try:
+            text = card.inner_text()
+
+            if not any(brand in text.lower() for brand in BRANDS.keys()):
+                continue
+            if "Health Insurance" not in text:
+                continue
+
+            amount_match = get_with_pat.search(text)
+            if not amount_match:
+                continue
+            amount_val = f"${amount_match.group(1)}"
+
+            brand_key = None
+            for key in BRANDS:
+                if key.lower() in text.lower():
+                    brand_key = key
+                    break
+            if not brand_key:
+                continue
+
+            # Prefer data-redirect-url — it's per-card and unambiguous
+            detail_url = ""
+            redirect = card.get_attribute("data-redirect-url")
+            if redirect and redirect != "/finder-rewards":
+                detail_url = (
+                    "https://www.finder.com.au" + redirect
+                    if redirect.startswith("/") else redirect
+                )
+
+            # Fallback: <a> inside the card with a specific reward slug
+            if not detail_url:
+                link = card.query_selector("a[href*='finder-rewards/']")
+                if link:
+                    href = link.get_attribute("href") or ""
+                    if href and "refer-a-friend" not in href:
+                        detail_url = (
+                            "https://www.finder.com.au" + href
+                            if href.startswith("/") else href
+                        )
+
+            # Extract cover type
+            cover_type = None
+            container_text = text.lower()
+            for alias, ct in REWARDS_COVER.items():
+                if alias.lower() in container_text:
+                    cover_type = ct
+                    break
+
+            ed_m = end_date_pat.search(text)
+            end_date = ed_m.group(1).strip() if ed_m else ""
+
+            dedup_key = (brand_key, cover_type, amount_val)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            if detail_url:
+                print(f"  → Queued detail URL for {brand_key} ({cover_type}): {detail_url}")
             else:
-                break
- 
-        container_lower = container.get_text(" ", strip=True).lower()
- 
-        if "health insurance" not in container_lower:
+                print(f"  [warn] No detail URL found for {brand_key} {amount_val}")
+
+            pending.append({
+                "brand_key":  brand_key,
+                "cover_type": cover_type,
+                "amount":     amount_val,
+                "end_date":   end_date,
+                "detail_url": detail_url,
+                "t_and_c":    "",
+            })
+
+        except Exception:
             continue
- 
-        ed_m = end_date_pat.search(container_lower)
-        end_date = ed_m.group(1).strip() if ed_m else ""
- 
-        # Determine cover_type from category text; None = applies to all types
-        cover_type = None
-        for alias, ct in REWARDS_COVER.items():
-            if alias.lower() in container_lower:
-                cover_type = ct
-                break
- 
+
+    print(f"  Collected {len(pending)} unique reward cards. Starting T&C pass...")
+
+    url_to_tc: dict[str, str] = {}
+
+    for entry in pending:
+        url = entry["detail_url"]
+        if not url:
+            continue
+        if url not in url_to_tc:
+            url_to_tc[url] = scrape_reward_detail_tc(page, url)
+        entry["t_and_c"] = url_to_tc[url]
+
+    rewards = []
+    for entry in pending:
         rewards.append({
-            "brand_key":  brand_key,
-            "cover_type": cover_type,
-            "amount":     amount_val,
-            "end_date":   end_date,
+            "brand_key":  entry["brand_key"],
+            "cover_type": entry["cover_type"],
+            "amount":     entry["amount"],
+            "end_date":   entry["end_date"],
+            "t_and_c":    entry["t_and_c"],
         })
-        print(f"  Found Finder Reward: {brand_key} | {cover_type} | {amount_val} | ends {end_date}")
- 
+        print(f"  Found Finder Reward: {entry['brand_key']} | {entry['cover_type']} | {entry['amount']} | ends {entry['end_date']}")
+
+    print(f"Total rewards found: {len(rewards)}")
     return rewards
  
  
@@ -369,6 +488,8 @@ def annotate_with_finder_rewards(offers: list, rewards: list) -> list:
     For each offer, keyword-match on:
       1. brand  — offer["brand"] matches reward["brand_key"]
       2. amount — offer["other"] contains "$X REWARD" matching reward["amount"]
+    Also copies the T&C from the reward's detail page into offer["t_and_c"],
+    prefixed with "Finder Reward: ".
     """
     reward_pat_cache = {}
  
@@ -384,6 +505,7 @@ def annotate_with_finder_rewards(offers: list, rewards: list) -> list:
  
             amount   = reward["amount"]
             end_date = reward["end_date"]
+            t_and_c  = reward.get("t_and_c", "")
             tag      = f"Finder Rewards"
  
             if amount not in reward_pat_cache:
@@ -396,6 +518,10 @@ def annotate_with_finder_rewards(offers: list, rewards: list) -> list:
                 other_col = pat.sub(lambda mo: f"{mo.group(0)} ({tag})", other_col)
                 offer["other"] = other_col  # update for subsequent reward iterations
                 offer["end_date"] = end_date_col + f" | {tag}: {end_date}" if end_date else end_date_col
+                if t_and_c:
+                    existing_tc = offer.get("t_and_c", "")
+                    finder_tc = f"Finder Reward: {t_and_c}"
+                    offer["t_and_c"] = (existing_tc + " | " + finder_tc).lstrip(" | ") if existing_tc else finder_tc
  
     return offers
  
@@ -462,15 +588,6 @@ def upload_to_s3(payload: dict) -> None:
 
 # ---- Excel helpers ----------------------------------------------------------
  
-# Maps offer field → exact column header name from the excel sheet
-EXCEL_COL_MAP = {
-    "weeks_free": "Offer : Weeks Free",
-    "waiting_waive": "Offer : Waiting period waive",
-    "other": "Offer : Other",
-    "end_date": "Offer : End date",
-}
- 
- 
 def _header_index(ws) -> dict[str, int]:
     """Return {column_name: 0-based col index} by scanning all header rows."""
     idx = {}
@@ -511,7 +628,7 @@ def collapse_categories(category_records: list[dict]) -> dict:
 
     result = dict(category_records[0])  # start from first record as base
 
-    for field in ["weeks_free", "waiting_waive", "other", "end_date"]:
+    for field in ["weeks_free", "waiting_waive", "other", "end_date", "t_and_c"]:
         # Map each category → its value for this field (empty string if missing)
         cat_to_val: dict[str, str] = {
             r.get("cover_category", "n/a"): r.get(field, "")
@@ -585,7 +702,7 @@ def fill_excel(wb: openpyxl.Workbook, offers: list[dict]) -> None:
             if col_name in col_idx:
                 value = collapsed.get(field)
                 row[col_idx[col_name]].value = value if value else None
- 
+
  
 def update_on_s3(offers: list[dict]) -> None:
     """Download comp_offer.xlsx from S3, fill Aggregator rows, re-upload (overwrite)."""
