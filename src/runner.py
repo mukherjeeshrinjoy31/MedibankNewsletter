@@ -14,6 +14,7 @@ from src.scrapers.public_sentiment.abc_news import run as run_abc_news
 from src.scrapers.public_sentiment.ozbargain_deals import run as run_ozbargain
 from src.scrapers.public_sentiment.sbs_news import run as run_sbs_news
 from src.scrapers.public_sentiment.the_guardian_au import run as run_guardian
+
 from src.scrapers.stock_market.stock_prices import run as run_stock_prices
 from src.scrapers.medibank_specific.medibank_asx_scraper import run as run_medibank_asx
 from src.scrapers.medibank_specific.nib_asx_scraper import run as run_nib_asx
@@ -50,6 +51,7 @@ class ScraperOrchestrator:
             ("sbs_news",              run_sbs_news,    TIER.PUBLIC_SENTIMENT),
             ("the_guardian_au",       run_guardian,    TIER.PUBLIC_SENTIMENT),
             # Stock Market
+            
             ("stock_prices",          run_stock_prices, TIER.COMPETITOR),
             # Medibank Specific
             ("medibank_asx",          run_medibank_asx,    TIER.MEDIBANK_SPECIFIC),

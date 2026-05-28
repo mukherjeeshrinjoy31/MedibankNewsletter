@@ -6,7 +6,7 @@ from typing import Optional, List, Tuple
 
 from playwright.sync_api import sync_playwright
 
-from ...commons.data import ABC_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_KEYWORDS, NEWS_URLS
+from ...commons.data import ABC_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_URLS
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
 from ...utils.helpers import (
@@ -81,8 +81,10 @@ def collect_links(page, url: str) -> List[dict]:
         """elements => elements.map(el => ({
             text: el.innerText.trim().replace(/^result number \\d+\\s*/i, ''),
             href: el.getAttribute('href'),
-            parentText: el.closest('article')?.innerText
-                        || el.parentElement?.innerText
+            parentText: el.closest('article')
+                        ?.querySelector('h1,h2,h3,h4')
+                        ?.innerText?.trim()
+                        || el.parentElement?.innerText?.trim()
                         || ''
         }))"""
     )
@@ -91,7 +93,7 @@ def collect_links(page, url: str) -> List[dict]:
 def fetch_article_body(page, url: str) -> Tuple[str, Optional[datetime]]:
     """Fetch article page and extract body text and publication date."""
     try:
-        page.goto(url, wait_until="networkidle", timeout=30_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=15_000)
     except Exception as exc:
         logger.warning("Error loading article %s: %s", url, exc)
         return f"(Error loading article: {exc})", None
@@ -125,18 +127,26 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> List[dict]:
             links = collect_links(listing_page, source_url)
             logger.info("Got %d links from %s", len(links), source_url)
             all_links.extend(links)
+        
+        listing_page.close()
 
         seen_hrefs: set = set()
         candidates: List[dict] = []
         rejected = {"url_pattern": 0, "duplicate": 0, "short_headline": 0, "keyword": 0}
 
-        for link in all_links:
+        for i, link in enumerate(all_links):
+
+            if len(candidates) >= max_articles:
+                break
+
             href = link.get("href", "")
             headline = link.get("text", "").strip()
             parent_text = link.get("parentText", "").strip()
 
             if href.startswith("https://www.abc.net.au"):
                 href = href[len("https://www.abc.net.au"):]
+            href = href.rstrip("/")
+
             if not ARTICLE_URL_PATTERN.match(href):
                 rejected["url_pattern"] += 1
                 continue
@@ -146,45 +156,40 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> List[dict]:
             if len(headline) < 15:
                 rejected["short_headline"] += 1
                 continue
-            if not matches_keywords(headline + " " + parent_text):
+            seen_hrefs.add(href)
+            url = f"https://www.abc.net.au{href}"
+
+            article_page = browser.new_page()
+            try:
+                body, pub_date = fetch_article_body(article_page, url)
+            except Exception as exc:
+                logger.info("Failed to fetch body for %s: %s", url, exc)
+                continue
+            finally:
+                article_page.close()
+            
+            if not matches_keywords(headline + " " + parent_text + " " + body):
                 rejected["keyword"] += 1
                 continue
+            
+            logger.info("[%d] %s", i + 1, headline)
+            if pub_date and pub_date < fetch_cutoff_date(7):
+                    logger.info("Skipped (too old: %s)", pub_date.date())
+                    continue
 
-            seen_hrefs.add(href)
             candidates.append({
                 "headline": headline,
-                "url": f"https://www.abc.net.au{href}",
-                "body": "",
-                "pub_date": None,
+                "url": url,
+                "body": body,
+                "pub_date": pub_date.isoformat() if pub_date else None,
             })
-
-        logger.info("Total links: %d", len(all_links))
-        logger.info("Rejections: %s", rejected)
-        logger.info("After keyword filter: %d candidate(s). Fetching top %d...", len(candidates), max_articles)
-
-        candidates = candidates[:max_articles]
-        article_page = browser.new_page()
-        kept: List[dict] = []
-
-        for i, article in enumerate(candidates):
-            label = article["headline"][:65]
-            logger.info("[%d/%d] %s", i + 1, len(candidates), label)
-
-            body, pub_date = fetch_article_body(article_page, article["url"])
-            article["body"] = body
-            article["pub_date"] = pub_date
-
-            if pub_date and pub_date < fetch_cutoff_date(7):
-                logger.info("Skipped (too old: %s)", pub_date.date())
-                continue
-
-            article["pub_date"] = pub_date.isoformat() if pub_date else None
-            kept.append(article)
 
         browser.close()
 
-    logger.info("Articles kept after date filter: %d", len(kept))
-    return kept
+    logger.info("\nTotal links: %d", len(all_links))
+    logger.info("Rejections: %s", rejected)
+    logger.info("Articles kept: %d", len(candidates))
+    return candidates
 
 
 # ---------------------------------------------------------------------------
