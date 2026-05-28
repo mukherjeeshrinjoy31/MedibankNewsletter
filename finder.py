@@ -10,6 +10,8 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 import openpyxl
 import io
 from collections import defaultdict
+import requests
+import pdfplumber
 
 # ---- Config -----------------------------------------------------------------
 BUCKET  = "p000268ds-comp-offers"
@@ -50,6 +52,8 @@ COVER_TYPES = {
 
 BASE_RESULTS_URL = "https://www.finder.com.au/health-insurance/health-insurance-results"
 FINDER_REWARDS_URL = "https://www.finder.com.au/finder-rewards"
+HCF_LOYALTY_PHRASE = "hcf loyalty"
+HCF_MEMBERS_OFFERS_URL = "https://www.hcf.com.au/members/members-offers-and-discounts"
 
 # ---- Compiled regex patterns ------------------------------------------------
 WEEKS_FREE_PAT  = re.compile(r'\d+\s*(?:\+\d+\s*)?weeks?\s*free', re.I)
@@ -92,6 +96,7 @@ EXCEL_COL_MAP = {
     "waiting_waive": "Offer : Waiting period waive",
     "other": "Offer : Other",
     "end_date": "Offer : End date",
+    "t_and_c": "Offer : T&C"
 }
 
 #---- URL Builder -------------------------------------------------------------
@@ -119,7 +124,7 @@ def make_browser_context(playwright):
 # ---- Core Functions for Scraoing ---------------------------------------------
 def load_results_page(page, cover_params: dict):
     url = build_url(cover_params)
-    page.goto(url, timeout=30000, wait_until="domcontentloaded")
+    page.goto(url, timeout=45000, wait_until="domcontentloaded")
     time.sleep(5)
 
     try:
@@ -141,7 +146,7 @@ def reset_provider_filters(page):
             if all_label:
                 all_label.scroll_into_view_if_needed()
                 all_label.click()
-                time.sleep(2)
+                time.sleep(3)
                 return True
     except Exception:
         pass
@@ -174,7 +179,12 @@ def filter_by_provider(page, brand_label: str) -> bool:
 
 
 def clear_provider_filter(page, url: str):
-    page.goto(url, timeout=30000, wait_until="domcontentloaded")
+    if reset_provider_filters(page):
+        # faster option
+        return
+    # fallback - click failed, reload the page as before
+    print("  [warn] Could not reset filter via click — reloading page")
+    page.goto(url, timeout=45000, wait_until="domcontentloaded")
     time.sleep(5)
 
 
@@ -358,11 +368,11 @@ def scrape_finder_rewards(page) -> list:
     """
     print("Scraping Finder Rewards page...")
     page.goto(FINDER_REWARDS_URL, timeout=45000, wait_until="domcontentloaded")
-    time.sleep(5)
+    time.sleep(2)
 
     try:
         page.click("button:has-text('Accept')", timeout=5000)
-        time.sleep(1)
+        time.sleep(2)
     except PWTimeout:
         pass
 
@@ -524,6 +534,167 @@ def annotate_with_finder_rewards(offers: list, rewards: list) -> list:
                     offer["t_and_c"] = (existing_tc + " | " + finder_tc).lstrip(" | ") if existing_tc else finder_tc
  
     return offers
+
+# ---- HCF T&C scrape --------------------------------
+def scrape_hcf_loyalty_tc(page) -> str:
+    """
+    Navigate to the HCF members offers page, find the T&C link, scrape its text,
+    and return a compact summary string.
+    Returns an empty string if the T&C link or content cannot be found.
+    """
+    print(f"  → Navigating to HCF members offers page: {HCF_MEMBERS_OFFERS_URL}")
+    try:
+        page.goto(HCF_MEMBERS_OFFERS_URL, timeout=30000, wait_until="domcontentloaded")
+        time.sleep(2)
+ 
+        try:
+            page.click("button:has-text('Accept')", timeout=4000)
+            time.sleep(2)
+        except PWTimeout:
+            pass
+ 
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
+ 
+        # Look for a T&C link — try several common patterns
+        tc_url = None
+        for a in soup.find_all("a", href=True):
+            text = a.get_text(" ", strip=True).lower()
+            href = a["href"]
+            if any(kw in text for kw in ["terms and conditions", "terms & conditions", "t&c", "t&cs"]):
+                tc_url = href if href.startswith("http") else ("https://www.hcf.com.au" + href if href.startswith("/") else href)
+                break
+            if any(kw in href.lower() for kw in ["terms-and-conditions", "terms_and_conditions", "tandc", "t-and-c"]):
+                tc_url = href if href.startswith("http") else ("https://www.hcf.com.au" + href if href.startswith("/") else href)
+                break
+ 
+        if not tc_url:
+            print("  [warn] No T&C link found on HCF members offers page")
+            return ""
+ 
+        print(f"  → Found HCF T&C URL: {tc_url}")
+ 
+        if tc_url.lower().endswith(".pdf"):
+            # download with requests, extract text with pdfplumber
+            print("    → Detected PDF — downloading and extracting with pdfplumber...")
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/124.0.0.0 Safari/537.36"
+            }
+            response = requests.get(tc_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            pdf_bytes = io.BytesIO(response.content)
+ 
+            page_texts = []
+            with pdfplumber.open(pdf_bytes) as pdf:
+                for i, pdf_page in enumerate(pdf.pages):
+                    # pdf layout is two-column — extract left then right to preserve
+                    # reading order; default extract_text() interleaves both columns.
+                    w, h = pdf_page.width, pdf_page.height
+                    left_text  = pdf_page.within_bbox((0,   0, w/2, h)).extract_text() or ""
+                    right_text = pdf_page.within_bbox((w/2, 0, w,   h)).extract_text() or ""
+                    page_texts.append(left_text + " " + right_text)
+ 
+            full_text = " ".join(page_texts)
+            full_text = re.sub(r'\s+', ' ', full_text).strip()
+ 
+            # Extract only the eligibility section
+            # Use case-sensitive ALL-CAPS heading match to avoid false positives from
+            eligibility_start = re.search(
+                r'ELIGIBLE MEMBERS AND MEMBERSHIP TIERS', full_text
+            )
+            eligibility_end = re.search(
+                r'HCF THANK YOU OFFERS AND REWARDS', full_text
+            )
+            if eligibility_start and eligibility_end and eligibility_start.start() < eligibility_end.start():
+                full_text = full_text[eligibility_start.start():eligibility_end.start()].strip()
+                print(f"    → Eligibility section extracted ({len(full_text)} chars)")
+            elif eligibility_start:
+                # Found start but not end — take everything from start
+                full_text = full_text[eligibility_start.start():].strip()
+                print(f"    → Eligibility section extracted (no end boundary, {len(full_text)} chars)")
+            else:
+                print("    [warn] Eligibility section heading not found in PDF — using full text")
+ 
+ 
+        else:
+            # navigate with Playwright, extract with BeautifulSoup
+            print("    → Detected HTML page — navigating with Playwright...")
+            page.goto(tc_url, timeout=30000, wait_until="domcontentloaded")
+            time.sleep(2)
+ 
+            try:
+                page.wait_for_selector("h1, h2, h3", timeout=10000)
+            except PWTimeout:
+                pass
+ 
+            html = page.content()
+            soup = BeautifulSoup(html, "html.parser")
+ 
+            # Remove nav, footer, header, script, style noise
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+ 
+            full_text = soup.get_text(" ", strip=True)
+            full_text = re.sub(r'\s+', ' ', full_text).strip()
+ 
+        # Truncate at common footer boilerplate (applies to both paths)
+        sentinel = TC_END_BOILERPLATE.search(full_text)
+        if sentinel:
+            print(f"    → Sentinel hit at char {sentinel.start()}, truncating (total: {len(full_text)})")
+            full_text = full_text[:sentinel.start()].strip()
+ 
+        if not full_text:
+            print("  [warn] HCF T&C page returned empty content")
+            return ""
+ 
+        print(f"    → HCF T&C scraped ({len(full_text)} chars)")
+        return full_text
+ 
+    except Exception as e:
+        print(f"  [error] HCF loyalty T&C scrape failed: {e}")
+        return ""
+ 
+ 
+def annotate_hcf_loyalty_tc(offers: list, page) -> list:
+    """
+    Post-process step: if any HCF offer's 'other' field contains the HCF loyalty
+    phrase, scrape the T&C from the HCF members offers page and append it to all
+    matching HCF offers' 't_and_c' field.
+    """
+    hcf_loyalty_offers = False
+    for offer in offers:
+        brand = offer.get("brand")
+        other_col = offer.get("other", "").lower()
+        if brand == "hcf":
+            if HCF_LOYALTY_PHRASE in other_col:
+                hcf_loyalty_offers = True
+                break
+ 
+    if not hcf_loyalty_offers:
+        print("No HCF offers contain the loyalty program phrase — skipping HCF loyalty T&C scrape.")
+        return offers
+ 
+    print(f"Found HCF offer(s) with loyalty program phrase — scraping T&C...")
+    tc_text = scrape_hcf_loyalty_tc(page)
+ 
+    if not tc_text:
+        print("  [warn] HCF loyalty T&C came back empty; t_and_c field unchanged.")
+        return offers
+ 
+    hcf_tc_entry = f"HCF Loyalty Program T&C: {tc_text}"
+ 
+    for offer in offers:
+        if offer.get("brand") != "hcf":
+            continue
+        if HCF_LOYALTY_PHRASE not in offer.get("other", "").lower():
+            continue
+        existing = offer.get("t_and_c", "")
+        offer["t_and_c"] = (existing + " | " + hcf_tc_entry).lstrip(" | ") if existing else hcf_tc_entry
+        print(f"    → Appended HCF loyalty T&C to offer: brand=hcf, cover_type={offer.get('cover_type')}, cover_category={offer.get('cover_category')}")
+ 
+    return offers
  
  
 def run() -> list:
@@ -546,6 +717,9 @@ def run() -> list:
             # Scrape Finder Rewards and annotate matching offers
             finder_rewards = scrape_finder_rewards(page)
             all_offers = annotate_with_finder_rewards(all_offers, finder_rewards)
+
+            # If any HCF offer mentions the loyalty program, scrape HCF's T&C page
+            all_offers = annotate_hcf_loyalty_tc(all_offers, page)
  
         except Exception as e:
             print(f"[error] {e}")
