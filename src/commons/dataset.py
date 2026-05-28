@@ -1,0 +1,23 @@
+from enum import Enum
+
+class DATASET(Enum):
+    PHI_REPORT = "phi_report"
+    PHI_AMEND = "phi_amendments"
+    NEWS = "news"
+    ARTICLES = "articles"
+    AWARDS = "awards"
+    STOCK_PRICE = "stock_price"
+    FIN_METRICS = "financial_metrics"
+    ASX_ANNOUNCEMENTS = "asx_announcements"
+    ASX_RELEASES = "asx_releases"
+    MEDIA_RELEASES = "media_releases"
+    CUSTOMER_OFFERS = "customer_offers"
+    DEALS = "deals"
+    PHI_ANNUAL = "phi_annual"
+    PHI_STATS = "phi_stats"
+    COMPETITOR_NEWS = "competitor_news"
+    SCHEDULE = "schedule"
+    PREMIUM_APPROVALS    = "premium_approvals"
+    CLINICAL_CATEGORIES  = "clinical_categories"
+    PRODUCTS = "products"
+    OMBUDSMAN_REPORTS = "ombudsman_reports"
