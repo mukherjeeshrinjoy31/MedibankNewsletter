@@ -55,8 +55,6 @@ PAGES = [
     {"url": "https://www.hbf.com.au/health-insurance/hospital-cover", "cover_hint": "hospital only"},
     {"url": "https://www.hbf.com.au/health-insurance/extras-cover",   "cover_hint": "extras only"},
 ]
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 
 HEADERS = {
     "User-Agent": (
@@ -64,7 +62,7 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
-}  # kept for reference; Playwright sets its own user agent via context
+}
 
 # Excel column mapping (scraper field -> Excel header)
 EXCEL_COL_MAP = {
@@ -78,7 +76,6 @@ EXCEL_COL_MAP = {
 COVER_TYPES = ["hospital + extras", "hospital only", "extras only"]
 
 
-# â”€â”€ Logging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -93,7 +90,6 @@ if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-# â”€â”€ Helper: detect cover type from text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def detect_cover_type(text):
     """Determine which cover type the text refers to."""
     t = text.lower()
