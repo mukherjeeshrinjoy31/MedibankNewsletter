@@ -11,8 +11,8 @@ __pycache__/
 *.pem
 
 # Generated data folders
-data/
-offer_files/
+# data/
+# offer_files/
 
 # Logs
 *.log
