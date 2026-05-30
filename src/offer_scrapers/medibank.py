@@ -17,7 +17,7 @@ from ..commons.data import HEADERS
 from ..commons.dataset import DATASET
 from ..commons.offers_data import COVER_TYPES, SOURCE, MEDIBANK_ROOT_URL, MEDIBANK_SCRAPE_PAGES, MEDIBANK_OFFER_URL, TERM_HEADINGS, TERMS_STOP_MARKERS
 from ..commons.tiers import TIER
-from ..utils.helpers import build_payload, fetch_run_date, save_current_offer
+from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3
 from ..utils.offer_helpers import (
     _clean_text, aggregate_offers, detect_cover_type, extract_offer,
     extract_end_date, parse_html, save_locally, update_excel,
@@ -201,7 +201,9 @@ def run(local: Optional[str] = None):
 
     if local:
         save_locally(payload, SOURCE.MEDIBANK.value, DATASET.DIRECT_OFFERS.value)
+        update_excel(results, BRAND)
     else:
+        upload_to_s3(payload, is_offer_json=True)
         update_excel(results, BRAND)
         if UPDATE_S3_EXCEL:
             update_excel_on_s3(results, BRAND)

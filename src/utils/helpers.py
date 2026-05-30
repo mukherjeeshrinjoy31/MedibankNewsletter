@@ -53,10 +53,11 @@ def build_payload(content, source: str, dataset: str, scraped_at: str, tier: str
 # Storage
 # ---------------------------------------------------------------------------
 
-def upload_to_s3(payload: dict) -> None:
+def upload_to_s3(payload: dict, is_offer_json: bool = False) -> None:
     """Upload payload JSON to S3."""
     s3  = boto3.client("s3", region_name=AWS_REGION)
-    key = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
+    prefix = "raw/offer_json" if is_offer_json else f"raw/{payload['tier']}"
+    key = f"{prefix}/{payload['source']}_{payload['dataset']}_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
     s3.put_object(
         Bucket=BUCKET,
         Key=key,

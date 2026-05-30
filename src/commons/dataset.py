@@ -1,6 +1,7 @@
 from enum import Enum
 
 class DATASET(Enum):
+    OFFERS = 'offers'
     DIRECT_OFFERS = "direct_offers"
     PHI_REPORT = "phi_report"
     PHI_AMEND = "phi_amendments"
@@ -17,8 +18,10 @@ class DATASET(Enum):
     PHI_ANNUAL = "phi_annual"
     PHI_STATS = "phi_stats"
     COMPETITOR_NEWS = "competitor_news"
+    COMPETITOR_OFFERS = "competitor_offers"
     SCHEDULE = "schedule"
     PREMIUM_APPROVALS    = "premium_approvals"
     CLINICAL_CATEGORIES  = "clinical_categories"
     PRODUCTS = "products"
     OMBUDSMAN_REPORTS = "ombudsman_reports"
+    HOSPITAL_NEWS = "hospital_news"

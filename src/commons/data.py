@@ -298,3 +298,9 @@ TICKERS = [
     {"ticker": "MPL.AX", "source": "asx_mpl"},
     {"ticker": "NHF.AX", "source": "asx_nib"},
 ]
+
+STATE_HEALTH_SOURCES = [
+    {"name": "NSW Health", "url": "https://www.health.nsw.gov.au/news/Pages/default.aspx", "type": "html"},
+    {"name": "VIC Health", "url": "https://www.health.vic.gov.au/media-releases", "type": "html"},
+    {"name": "QLD Health", "url": "https://news.google.com/rss/search?q=Queensland+Health+private+hospital&hl=en-AU&gl=AU&ceid=AU:en", "type": "rss"}
+]

@@ -1,88 +1,55 @@
 # nib.py — Competitor offer scraper for NIB Health Insurance
-# Scrapes direct offer data from nib.com.au and fills Direct rows in comp_offer.xlsx
 
+import logging
 import re
-import io
 import os
-import json
 import time
-import argparse
-import feedparser
-import requests
-import openpyxl
-import boto3
+from typing import Optional
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone
 from collections import defaultdict
 
+from ..commons.dataset import DATASET
+from ..commons.offers_data import (
+    ENDDATE_PAT2, EXTRAS_ONLY, HOSPITAL_EXTRAS, HOSPITAL_ONLY,
+    NIB_OFFER_PAGES, NIB_OFFER_URL, SOURCE, TC_KEYWORDS,
+    WAITING_PAT, WAITING_PAT2, WEEKS_PAT
+)
+from ..commons.tiers import TIER
+from ..utils.helpers import build_payload, fetch_run_date, upload_to_s3
+from ..utils.offer_helpers import (
+    detect_cover_type, extract_offer_blocks, fetch_page,
+    save_locally, scrape_rss, update_excel, update_excel_on_s3
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+log = logging.getLogger(__name__)
+
 # ---- Config ----
-SOURCE  = "nib"
-DATASET = "competitor_offers"
-TIER    = "phi_industry"
-BUCKET  = "p000268ds-comp-offers"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
-SHEET   = "comp_offer.xlsx"
-
-OFFER_PAGES = [
-    {"name": "NIB Offers",              "url": "https://www.nib.com.au/health-insurance/offers"},
-    {"name": "NIB Homepage",            "url": "https://www.nib.com.au/"},
-    {"name": "NIB Health Insurance",    "url": "https://www.nib.com.au/health-insurance"},
-    {"name": "NIB Hospital",            "url": "https://www.nib.com.au/health-insurance/hospital"},
-    {"name": "NIB Extras",              "url": "https://www.nib.com.au/health-insurance/extras"},
-]
-
-OFFER_KEYWORDS = ["weeks free", "week free", "waiting period", "waiver", "promo",
-                  "offer", "bonus", "discount", "join by", "ends", "new members",
-                  "12wfreeww", "extras8wf", "skip the", "month wait"]
-
-TC_KEYWORDS = ["new members only", "new australian resident", "available to new",
-               "fulfilled", "ineligible", "residency", "t&cs apply",
-               "exclusions apply", "value of offer", "level of cover",
-               "direct debit", "maintained", "kickstarter"]
+BRAND           = "NIB"
+UPDATE_S3_EXCEL = os.getenv('UPDATE_S3_EXCEL', '1').strip().lower() not in ('0', 'false', 'no')
 
 # ---- Regex Patterns ----
-WEEKS_PAT    = re.compile(r'(?:up to\s+)?(\d+(?:\+\d+)?)\s*weeks?\s*free', re.I)
-WAITING_PAT  = re.compile(r'(\d+)\s*(?:and|&)\s*(\d+)\s*month.*?(?:wait|waiv)', re.I)
-WAITING_PAT2 = re.compile(r'(\d+)\s*month.*?(?:wait|waiv)', re.I)
 ENDDATE_PAT  = re.compile(r'(?:ends?|until|by|join by|choose.*?by|by\s+\d{1,2})\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s*\d{2,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})', re.I)
-ENDDATE_PAT2 = re.compile(r'(\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})', re.I)
 ENDDATE_PAT3 = re.compile(r'(?:ends?|until|by|join by|choose.*?online by)\s+(\d{1,2}\s+[A-Za-z]+)(?:\s|\.)', re.I)
 PROMO_PAT    = re.compile(r'(?:promo(?:tion)?\s*code|use\s+(?:promo\s+)?code|enter\s+code|code)[:\s]+([A-Z0-9]{6,})', re.I)
 
-EXCEL_COL_MAP = {
-    "weeks_free":    "Offer : Weeks Free",
-    "waiting_waive": "Offer : Waiting period waive",
-    "other":         "Offer : Other",
-    "end_date":      "Offer : End date",
-    "tandc":         "Offer : T&C",
-}
-
 COVER_TYPE_KEYWORDS = {
-    "hospital + extras": ["hospital and extras", "hospital & extras", "combined",
-                          "hospital + extras", "hospital and extra", "12wfreeww",
-                          "choose a combined"],
-    "hospital only":     ["hospital only", "hospital cover", "hospital-only",
-                          "standalone hospital", "hospital product",
-                          "choose a hospital only", "hospital only cover"],
-    "extras only":       ["extras only", "extras cover", "extras-only",
-                          "standalone extras", "extras8wf", "extras policy",
-                          "eligible extras", "extras cover online"],
+    HOSPITAL_EXTRAS: ["hospital and extras", "hospital & extras", "combined",
+                      "hospital + extras", "hospital and extra", "12wfreeww",
+                      "choose a combined"],
+    HOSPITAL_ONLY:   ["hospital only", "hospital cover", "hospital-only",
+                      "standalone hospital", "hospital product",
+                      "choose a hospital only", "hospital only cover"],
+    EXTRAS_ONLY:     ["extras only", "extras cover", "extras-only",
+                      "standalone extras", "extras8wf", "extras policy",
+                      "eligible extras", "extras cover online"],
 }
-
-# ---- Scraping ----
-def fetch_page(url: str) -> BeautifulSoup | None:
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=30)
-        if r.status_code == 200:
-            return BeautifulSoup(r.text, "html.parser")
-        print(f"  ✗ {url}: {r.status_code}")
-    except Exception as e:
-        print(f"  ✗ {url}: {e}")
-    return None
 
 
 def parse_tandc_structured(text: str) -> str:
-    """Parse raw T&C small print into structured labelled format."""
     lower = text.lower()
     parts = []
     seen_labels = set()
@@ -92,41 +59,33 @@ def parse_tandc_structured(text: str) -> str:
             seen_labels.add(label)
             parts.append(f"{label}: {value.strip().title()}")
 
-    # Eligibility
     elig_match = re.search(r'(new australian resident members? only|available to new members?(?:\s+with\s+australian\s+residency)?)', lower)
     if elig_match:
         add("Eligibility", elig_match.group(1))
 
-    # Offer period — catches "by 30 June", "by 30 June 2026", "online by 30 June"
     period_match = re.search(r'(?:online\s+)?by\s+(\d{1,2}\s+[A-Za-z]+(?:\s+\d{4})?)\b', lower)
     if period_match:
         date = period_match.group(1).strip()
-        # Append year if missing
         if not re.search(r'\d{4}', date):
             date += " 2026"
         add("Offer Period", f"Join by {date}")
 
-    # Waiting periods — catches "skip the 2 & 6 month wait on Extras"
     wait_match = re.search(r'(skip\s+the\s+\d+\s*(?:&|and)\s*\d+\s+month\s+wait\s+on\s+\w+)', lower)
     if wait_match:
         add("Waiting Periods", wait_match.group(1))
 
-    # Fulfilment — catches "fulfilled in the 3rd and 13th month" and "fulfilled in month 3"
     fulfil_match = re.search(r'fulfilled?\s+(?:in\s+)?(?:the\s+)?(\d+(?:st|nd|rd|th)?(?:\s+and\s+\d+(?:st|nd|rd|th)?)?\s+month[^.|]*)', lower)
     if fulfil_match:
         add("Fulfilment", fulfil_match.group(1))
 
-    # Excluded covers
     excl_match = re.search(r'ineligible\s*products?\s*include\s*([^.|]+)', lower)
     if excl_match:
         add("Excluded", excl_match.group(1))
 
-    # Value note
     value_match = re.search(r'value of offer\s+([^.|]+)', lower)
     if value_match:
         add("Value", value_match.group(1))
 
-    # Payment requirement
     pay_match = re.search(r'(direct\s*debit[^.]*)', lower)
     if pay_match:
         add("Payment", pay_match.group(1))
@@ -135,8 +94,6 @@ def parse_tandc_structured(text: str) -> str:
 
 
 def extract_tandc_text(soup: BeautifulSoup, cover_type: str) -> str:
-    """Extract and structure T&C small print text for a given cover type."""
-    # Collect ALL relevant text blocks from the page
     all_text = []
     for tag in soup.find_all(["p", "li", "span", "div"]):
         text = tag.get_text(separator=" ", strip=True)
@@ -149,21 +106,24 @@ def extract_tandc_text(soup: BeautifulSoup, cover_type: str) -> str:
         if not (15 < len(text) < 400):
             continue
 
-        # Filter by cover type relevance
         if cover_type == "hospital only":
-            if any(k in lower for k in ["hospital only", "hospital-only", "kickstarter",
-                                         "hospital cover online", "hospital only cover"]):
+            if (
+                any(k in lower for k in ["hospital only", "hospital-only", "kickstarter",
+                                          "hospital cover online", "hospital only cover"])
+                or (any(k in lower for k in ["new australian resident", "fulfilled", "ineligible",
+                                              "value of offer"]) and "extras" not in lower)
+            ):
                 all_text.append(text)
-            elif any(k in lower for k in ["new australian resident", "fulfilled", "ineligible",
-                                           "value of offer"]) and "extras" not in lower:
-                all_text.append(text)
+
         elif cover_type == "hospital + extras":
-            if any(k in lower for k in ["combined", "hospital and extras", "hospital + extras",
+            if (
+                any(k in lower for k in ["combined", "hospital and extras", "hospital + extras",
                                           "hospital & extras", "3rd and 13th", "skip the 2",
-                                          "hospital + extras cover online"]):
+                                          "hospital + extras cover online"])
+                or any(k in lower for k in ["available to new members", "fulfilled in the 3rd"])
+            ):
                 all_text.append(text)
-            elif any(k in lower for k in ["available to new members", "fulfilled in the 3rd"]):
-                all_text.append(text)
+
         elif cover_type == "extras only":
             if any(k in lower for k in ["extras only", "extras policy", "extras cover"]):
                 all_text.append(text)
@@ -175,34 +135,13 @@ def extract_tandc_text(soup: BeautifulSoup, cover_type: str) -> str:
     return parse_tandc_structured(combined)
 
 
-def extract_offer_blocks(soup: BeautifulSoup) -> list[str]:
-    found = []
-    for tag in soup.find_all(["p", "h1", "h2", "h3", "h4", "li", "span", "div"]):
-        text = tag.get_text(separator=" ", strip=True)
-        if any(kw in text.lower() for kw in OFFER_KEYWORDS):
-            if 20 < len(text) < 600 and text not in found:
-                found.append(text)
-    return found[:30]
-
-
-def scrape_rss() -> list[str]:
-    print("  Fetching NIB offers via Google News RSS...")
-    rss_url = "https://news.google.com/rss/search?q=NIB+health+insurance+offer+weeks+free+Australia&hl=en-AU&gl=AU&ceid=AU:en"
-    feed = feedparser.parse(rss_url)
-    entries = []
-    for entry in feed.entries[:10]:
-        entries.append(f"{entry.title} | {entry.link} | {entry.get('published', '')}")
-    print(f"  ✓ Found {len(entries)} RSS articles")
-    return entries
-
-
 def scrape_all_pages() -> tuple[list[str], dict]:
-    print("--- NIB Scraper ---")
+    log.info("--- NIB Scraper ---")
     all_blocks = []
     tandc_by_cover = defaultdict(list)
 
-    for page in OFFER_PAGES:
-        print(f"  Fetching {page['name']}...")
+    for page in NIB_OFFER_PAGES:
+        log.info("Fetching %s...", page['name'])
         soup = fetch_page(page["url"])
         if soup:
             blocks = extract_offer_blocks(soup)
@@ -211,12 +150,12 @@ def scrape_all_pages() -> tuple[list[str], dict]:
                 text = extract_tandc_text(soup, ct)
                 if text:
                     tandc_by_cover[ct].append(text)
-            print(f"  ✓ {page['name']}: {len(blocks)} offer blocks found")
+            log.info("%s: %d offer blocks found", page['name'], len(blocks))
         else:
-            print(f"  ✗ {page['name']}: failed")
+            log.warning("%s: failed to fetch", page['name'])
         time.sleep(2)
 
-    rss_blocks = scrape_rss()
+    rss_blocks = scrape_rss(BRAND)
     all_blocks.extend(rss_blocks)
 
     tandc_final = {ct: texts[0] for ct, texts in tandc_by_cover.items() if texts}
@@ -265,16 +204,8 @@ def parse_offer(text: str) -> dict:
         "waiting_waive": waiting,
         "other":         " | ".join(other_parts),
         "end_date":      end_date,
-        "tandc":         "",
+        "terms_conditions": "",
     }
-
-
-def detect_cover_type(text: str) -> str | None:
-    lower = text.lower()
-    for cover_type, keywords in COVER_TYPE_KEYWORDS.items():
-        if any(kw in lower for kw in keywords):
-            return cover_type
-    return None
 
 
 def build_structured_offers(blocks: list[str], tandc_by_cover: dict = {}) -> dict:
@@ -288,10 +219,8 @@ def build_structured_offers(blocks: list[str], tandc_by_cover: dict = {}) -> dic
         if not any([parsed["weeks_free"], parsed["waiting_waive"],
                     parsed["other"], parsed["end_date"]]):
             continue
-        # Skip incomplete fragments
         if not parsed["weeks_free"] and not (parsed["other"] and parsed["end_date"]):
             continue
-        # Normalize key
         normalized = re.sub(r'\$[\d,]+', '', parsed["other"])
         normalized = re.sub(r'ends?\s+\d{1,2}\s+\w+\s+\d{4}', '', normalized, flags=re.I)
         normalized = re.sub(r'Code:\s*[A-Z0-9]+', '', normalized, flags=re.I)
@@ -302,18 +231,17 @@ def build_structured_offers(blocks: list[str], tandc_by_cover: dict = {}) -> dic
         seen_parsed.add(key)
         grouped[cover_type].append(parsed)
 
-    # Assign T&C text per cover type
     for cover_type in grouped:
         tandc_text = tandc_by_cover.get(cover_type, "")
         for offer in grouped[cover_type]:
-            offer["tandc"] = tandc_text
+            offer["terms_conditions"] = tandc_text
 
     return grouped
 
 
-def merge_offers(offers: list[dict]) -> dict:
+def merge_nib_offers(offers: list[dict]) -> dict:
     if not offers:
-        return {"weeks_free": "", "waiting_waive": "", "other": "", "end_date": "", "tandc": ""}
+        return {"weeks_free": "", "waiting_waive": "", "other": "", "end_date": "", "terms_conditions": ""}
     if len(offers) == 1:
         return offers[0]
 
@@ -325,7 +253,7 @@ def merge_offers(offers: list[dict]) -> dict:
         "waiting_waive": primary["waiting_waive"],
         "other":         primary["other"],
         "end_date":      primary["end_date"],
-        "tandc":         primary.get("tandc", ""),
+        "terms_conditions": primary.get("terms_conditions", ""),
     }
 
     seen_parts = set(filter(None, merged["other"].split(" | ")))
@@ -350,134 +278,51 @@ def merge_offers(offers: list[dict]) -> dict:
     return merged
 
 
-# ---- Excel Helpers ----
-def _header_index(ws) -> dict:
-    idx = {}
-    for row in ws.iter_rows():
-        for cell in row:
-            if isinstance(cell.value, str) and cell.value.strip() in EXCEL_COL_MAP.values():
-                idx[cell.value.strip()] = cell.column - 1
-        if len(idx) == len(EXCEL_COL_MAP):
-            break
-    return idx
-
-
-def fill_excel(wb: openpyxl.Workbook, structured_offers: dict) -> None:
-    ws = wb["table"]
-    col_idx = _header_index(ws)
-
-    for row in ws.iter_rows(min_row=2):
-        brand_val   = str(row[0].value or "").strip().upper()
-        cover_val   = str(row[1].value or "").strip().lower()
-        channel_val = str(row[2].value or "").strip().lower()
-
-        if brand_val != "NIB" or channel_val != "direct":
-            continue
-
-        # Clear first to avoid stale data
-        for field, col_name in EXCEL_COL_MAP.items():
-            if col_name in col_idx:
-                row[col_idx[col_name]].value = None
-
-        offers_for_cover = structured_offers.get(cover_val, [])
-        if not offers_for_cover:
-            weeks_col = EXCEL_COL_MAP["weeks_free"]
-            if weeks_col in col_idx:
-                row[col_idx[weeks_col]].value = "No current offer"
-            continue
-
-        merged = merge_offers(offers_for_cover)
-        for field, col_name in EXCEL_COL_MAP.items():
-            if col_name in col_idx:
-                value = merged.get(field)
-                row[col_idx[col_name]].value = value if value else None
-
-    print("✓ Filled NIB Direct rows in Excel")
-
-
-# ---- S3 Helpers ----
-def update_on_s3(structured_offers: dict) -> None:
-    s3 = boto3.client("s3", region_name="us-east-1")
-    key = f"raw/excel/{SHEET}"
-    obj = s3.get_object(Bucket=BUCKET, Key=key)
-    wb = openpyxl.load_workbook(io.BytesIO(obj["Body"].read()))
-    fill_excel(wb, structured_offers)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=buf.read(),
-        ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    print(f"✓ Updated: s3://{BUCKET}/{key}")
-
-
-def update_excel_local(structured_offers: dict, directory: str = ".") -> None:
-    src = os.path.join(directory, SHEET)
-    if not os.path.exists(src):
-        print(f"⚠ {src} not found — skipping Excel update")
-        return
-    wb = openpyxl.load_workbook(src)
-    fill_excel(wb, structured_offers)
-    wb.save(src)
-    print(f"✓ Updated locally: {src}")
-
-
-# ---- Output Helpers ----
-def build_payload(content: str) -> dict:
-    return {
-        "source":     SOURCE,
-        "tier":       TIER,
-        "dataset":    DATASET,
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "url":        "https://www.nib.com.au/health-insurance/offers",
-        "content":    content,
-    }
-
-
-def save_local(payload: dict, directory: str = ".") -> None:
-    os.makedirs(directory, exist_ok=True)
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = f"{directory}/{SOURCE}_{DATASET}_{date}.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    print(f"✓ Saved locally: {path}")
-
-
-def upload_json_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="us-east-1")
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    key = f"raw/json/{SOURCE}_{DATASET}_{date}.json"
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType="application/json",
-    )
-    print(f"✓ Uploaded JSON: s3://{BUCKET}/{key}")
-
-
-# ---- Main ----
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--local", metavar="DIR", nargs="?", const="data/competitors",
-                        help="save locally instead of uploading to S3")
-    args = parser.parse_args()
+def run(local: Optional[str] = None):
+    log.info("Run mode: %s", "local" if local else "S3")
+    log.info("=" * 50)
+    log.info("Starting scrape: %s / %s", SOURCE.NIB.value, DATASET.COMPETITOR_OFFERS.value)
+    log.info("=" * 50)
 
     blocks, tandc_by_cover = scrape_all_pages()
-    print(f"\n✓ T&C text found for: {list(tandc_by_cover.keys())}")
+    log.info("T&C text found for: %s", list(tandc_by_cover.keys()))
     structured_offers = build_structured_offers(blocks, tandc_by_cover)
-
-    print(f"\n✓ Structured offers found for: {list(structured_offers.keys())}")
+    log.info("Structured offers found for: %s", list(structured_offers.keys()))
 
     content = "\n\n".join(blocks)
-    payload = build_payload(content)
+    if not content:
+        log.warning("No content found — file will not be saved")
+        return False
 
-    if args.local:
-        save_local(payload, args.local)
-        update_excel_local(structured_offers, args.local)
+    payload = build_payload(
+        content,
+        SOURCE.NIB.value,
+        DATASET.COMPETITOR_OFFERS.value,
+        fetch_run_date(),
+        TIER.PHI.value,
+        NIB_OFFER_URL
+    )
+
+    if local:
+        save_locally(payload, SOURCE.NIB.value, DATASET.COMPETITOR_OFFERS.value)
+        update_excel(structured_offers, BRAND, merge_fn=merge_nib_offers)
     else:
-        upload_json_to_s3(payload)
-        update_on_s3(structured_offers)
+        upload_to_s3(payload, is_offer_json=True)
+        update_excel(structured_offers, BRAND, merge_fn=merge_nib_offers)
+        if UPDATE_S3_EXCEL:
+            update_excel_on_s3(structured_offers, BRAND, merge_fn=merge_nib_offers)
+
+    log.info("Scrape complete")
+    return True
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--local", metavar="DIR", nargs="?", const="data", help="Save outputs locally")
+    args = parser.parse_args()
+    run(local=args.local)
+
+
+if __name__ == "__main__":
+    main()

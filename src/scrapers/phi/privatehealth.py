@@ -33,7 +33,7 @@ def read_csv(filepath: str) -> str:
         df = df.fillna("")
         return df.to_csv(index=False)
     except Exception as e:
-        logger.error("Could not read CSV %s: %s", filepath, e)
+        logger.exception("Could not read CSV %s: %s", filepath, e)
         return ""
 
 
@@ -49,7 +49,7 @@ def read_xml(filepath: str) -> str:
                 lines.append(f"{tag}: {elem.text.strip()}")
         return "\n".join(lines[:200])
     except Exception as e:
-        logger.error("Could not read XML %s: %s", filepath, e)
+        logger.exception("Could not read XML %s: %s", filepath, e)
         return ""
 
 
@@ -94,7 +94,7 @@ def scrape_privatehealth() -> str:
     try:
         r = requests.get(zip_url, headers=HEADERS, timeout=60)
     except Exception as e:
-        logger.error("Failed to download ZIP: %s", e)
+        logger.exception("Failed to download ZIP: %s", e)
         return ""
 
     if r.status_code != 200:

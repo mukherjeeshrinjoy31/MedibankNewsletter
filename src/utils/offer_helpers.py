@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timezone
 import io
 import json
@@ -6,10 +7,14 @@ import os
 import re
 
 from bs4 import BeautifulSoup
+import feedparser
 import openpyxl
+import requests
+
+from ..commons.data import HEADERS
 
 from ..commons.config import AWS_REGION, BUCKET_COMP_OFFER, EXPECTED_BUCKET_OWNER
-from ..commons.offers_data import COVER_TYPES, OFFER_EXCEL_FILE, EXCEL_COL_MAP
+from ..commons.offers_data import BRANDS, COVER_CATEGORY, COVER_TYPES, OFFER_EXCEL_FILE, EXCEL_COL_MAP, OFFER_KEYWORDS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -293,20 +298,22 @@ def _write_results_to_workbook(wb, results, brand):
     return rows_updated
 
 
-def update_excel(results, brand, filepath=OFFER_EXCEL_FILE):
-    """Write Direct-channel results into the matching brand rows."""
+def update_excel(results_or_offers, brand: str, merge_fn=None, filepath=OFFER_EXCEL_FILE) -> None:
     if not os.path.exists(filepath):
         logger.warning("Excel file not found: %s — skipping update", filepath)
         return
-
     wb = openpyxl.load_workbook(filepath)
-    rows_updated = _write_results_to_workbook(wb, results, brand)
+    if brand.lower() == "finder":
+        fill_excel_for_finder(wb, results_or_offers)
+    elif merge_fn is not None:
+        fill_excel(wb, results_or_offers, brand, merge_fn)
+    else:
+        _write_results_to_workbook(wb, results_or_offers, brand)
     wb.save(filepath)
-    logger.info("Excel updated: %d %s Direct row(s) written to %s", rows_updated, brand, filepath)
+    logger.info("Excel updated: %s rows written to %s", brand, filepath)
 
 
-def update_excel_on_s3(results, brand, bucket=BUCKET_COMP_OFFER, key=S3_EXCEL_KEY):
-    """Download comp_offer.xlsx from S3, update this brand's Direct rows, and overwrite it."""
+def update_excel_on_s3(results_or_offers, brand: str, merge_fn=None, bucket=BUCKET_COMP_OFFER, key=S3_EXCEL_KEY) -> None:
     try:
         import boto3
     except ImportError:
@@ -316,12 +323,17 @@ def update_excel_on_s3(results, brand, bucket=BUCKET_COMP_OFFER, key=S3_EXCEL_KE
     s3 = boto3.client("s3", region_name=AWS_REGION)
     obj = s3.get_object(Bucket=bucket, Key=key, ExpectedBucketOwner=EXPECTED_BUCKET_OWNER)
     wb = openpyxl.load_workbook(io.BytesIO(obj["Body"].read()))
-    rows_updated = _write_results_to_workbook(wb, results, brand)
+
+    if brand.lower() == "finder":
+        fill_excel_for_finder(wb, results_or_offers)
+    elif merge_fn is not None:
+        fill_excel(wb, results_or_offers, brand, merge_fn)
+    else:
+        _write_results_to_workbook(wb, results_or_offers, brand)
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-
     s3.put_object(
         Bucket=bucket,
         Key=key,
@@ -329,4 +341,165 @@ def update_excel_on_s3(results, brand, bucket=BUCKET_COMP_OFFER, key=S3_EXCEL_KE
         ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ExpectedBucketOwner=EXPECTED_BUCKET_OWNER,
     )
-    logger.info("Excel updated on S3: %d %s Direct row(s) written to s3://%s/%s", rows_updated, brand, bucket, key)
+    logger.info("Excel updated on S3: %s rows written to s3://%s/%s", brand, bucket, key)
+
+def fetch_page(url: str) -> BeautifulSoup | None:
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=30)
+        if r.status_code == 200:
+            return BeautifulSoup(r.text, "html.parser")
+        print(f"  ✗ {url}: {r.status_code}")
+    except Exception as e:
+        print(f"  ✗ {url}: {e}")
+    return None
+
+def extract_offer_blocks(soup: BeautifulSoup) -> list[str]:
+    found = []
+    for tag in soup.find_all(["p", "h1", "h2", "h3", "h4", "li", "span", "div"]):
+        text = tag.get_text(separator=" ", strip=True)
+        if any(kw in text.lower() for kw in OFFER_KEYWORDS):
+            if 20 < len(text) < 600 and text not in found:
+                found.append(text)
+    return found[:30]
+
+def scrape_rss(brand: str) -> list[str]:
+    logger.info("Fetching %s offers via Google News RSS...", brand)
+    rss_url = f"https://news.google.com/rss/search?q={brand}+health+insurance+offer+weeks+free+Australia&hl=en-AU&gl=AU&ceid=AU:en"
+    feed = feedparser.parse(rss_url)
+    entries = []
+    for entry in feed.entries[:10]:
+        entries.append(f"{entry.title} | {entry.link} | {entry.get('published', '')}")
+    logger.info("Found %d RSS articles for %s", len(entries), brand)
+    return entries
+
+def detect_cover_type_from_keywords(text: str, cover_type_keywords: dict) -> str | None:
+    lower = text.lower()
+    for cover_type, keywords in cover_type_keywords.items():
+        if any(kw in lower for kw in keywords):
+            return cover_type
+    return None
+
+def fill_excel(wb, structured_offers: dict, brand: str, merge_fn) -> None:
+    ws = wb["table"]
+    col_idx = _header_index(ws)
+
+    for row in ws.iter_rows(min_row=2):
+        brand_val   = str(row[0].value or "").strip().upper()
+        cover_val   = str(row[1].value or "").strip().lower()
+        channel_val = str(row[2].value or "").strip().lower()
+
+        if brand_val != brand.upper() or channel_val != "direct":
+            continue
+
+        for field, col_name in EXCEL_COL_MAP.items():
+            column = _find_column_index(col_idx, col_name)
+            if column is not None:
+                row[column].value = None
+
+        offers_for_cover = structured_offers.get(cover_val, [])
+        if not offers_for_cover:
+            column = _find_column_index(col_idx, EXCEL_COL_MAP["weeks_free"])
+            if column is not None:
+                row[column].value = "No current offer"
+            continue
+
+        merged = merge_fn(offers_for_cover)
+        for field, col_name in EXCEL_COL_MAP.items():
+            column = _find_column_index(col_idx, col_name)
+            if column is not None:
+                value = merged.get(field)
+                row[column].value = value if value else None
+
+    logger.info("Filled %s Direct rows in Excel", brand)
+
+def cat_sort_key(cat: str) -> int:
+    try:
+        return COVER_CATEGORY.index(cat)
+    except ValueError:
+        return 99
+
+def format_cats(cats: list) -> str:
+    return "/".join(sorted(cats, key=cat_sort_key))
+
+def collapse_categories(category_records: list) -> dict:
+    if not category_records:
+        return {}
+    if len(category_records) == 1 or all(r.get("cover_category") == "all" for r in category_records):
+        return category_records[0]
+
+    result = dict(category_records[0])
+
+    for field in ["weeks_free", "waiting_waive", "other", "end_date", "terms_conditions"]:
+        cat_to_val = {
+            r.get("cover_category", "n/a"): r.get(field, "")
+            for r in category_records
+            if r.get("cover_category") != "all"
+        }
+        if not any(cat_to_val.values()):
+            result[field] = ""
+            continue
+
+        val_to_cats = defaultdict(list)
+        for cat, val in cat_to_val.items():
+            val_to_cats[val].append(cat)
+
+        unique_vals = set(cat_to_val.values())
+        if len(unique_vals) == 1:
+            result[field] = unique_vals.pop()
+            continue
+
+        parts = []
+        for val, cats in sorted(val_to_cats.items(),
+                                key=lambda kv: cat_sort_key(min(kv[1], key=cat_sort_key))):
+            if val:
+                parts.append(f"{format_cats(cats)}: {val}")
+
+        result[field] = " | ".join(parts) if parts else ""
+
+    return result
+
+def fill_excel_for_finder(wb: openpyxl.Workbook, offers: list) -> None:
+    ws = wb["table"]
+    col_idx = _header_index(ws)                                  # ✅ shared
+
+    grouped = defaultdict(list)
+    for offer in offers:
+        if offer.get("brand") not in BRANDS:
+            continue
+        key = (offer["brand"].lower(), offer["cover_type"].lower())
+        grouped[key].append(offer)
+
+    for row in ws.iter_rows(min_row=2):
+        if row[2].value != "Aggregator":
+            continue
+        brand_val = str(row[0].value or "").strip().lower()
+        cover_val = str(row[1].value or "").strip().lower()
+        if not brand_val or not cover_val:
+            continue
+
+        key = (brand_val, cover_val)
+        category_offers = grouped.get(key)
+        if not category_offers:
+            continue
+
+        collapsed = collapse_categories(category_offers)
+        for field, col_name in EXCEL_COL_MAP.items():
+            column = _find_column_index(col_idx, col_name)
+            if column is not None:
+                value = collapsed.get(field)
+                row[column].value = value if value else None
+                
+def make_browser_context(playwright):
+    browser = playwright.chromium.launch(
+        headless=True,
+        args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+    )
+    ctx = browser.new_context(
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        viewport={"width": 1280, "height": 900},
+        locale="en-AU",
+        timezone_id="Australia/Melbourne",
+        extra_http_headers={"Accept-Language": "en-AU,en;q=0.9"},
+    )
+    ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    return browser, ctx
