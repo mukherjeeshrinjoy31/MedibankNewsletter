@@ -644,8 +644,8 @@ def run(local: Optional[str] = None) -> bool:
     )
 
     if local:
-        save_locally(payload, SOURCE.FINDER.value, DATASET.OFFERS.value)
-        update_excel(content_list, BRAND)
+        save_locally(payload, SOURCE.FINDER.value, DATASET.OFFERS.value, local)
+        update_excel(content_list, BRAND, local_dir=local)
     else:
         upload_to_s3(payload, is_offer_json=True)
         if UPDATE_S3_EXCEL:

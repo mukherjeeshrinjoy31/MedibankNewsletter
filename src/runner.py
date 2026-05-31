@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import shutil
 import time
 from datetime import timedelta
 from typing import Optional
@@ -14,7 +13,6 @@ from src.scrapers.public_sentiment.abc_news import run as run_abc_news
 from src.scrapers.public_sentiment.ozbargain_deals import run as run_ozbargain
 from src.scrapers.public_sentiment.sbs_news import run as run_sbs_news
 from src.scrapers.public_sentiment.the_guardian_au import run as run_guardian
-
 from src.scrapers.stock_market.stock_prices import run as run_stock_prices
 from src.scrapers.medibank_specific.medibank_asx_scraper import run as run_medibank_asx
 from src.scrapers.medibank_specific.nib_asx_scraper import run as run_nib_asx
@@ -30,6 +28,7 @@ from src.scrapers.phi.mbs import run as run_mbs
 from src.scrapers.phi.newsrooms import run as run_newsrooms
 from src.scrapers.phi.ombudsman import run as run_ombudsman
 from src.scrapers.phi.privatehealth import run as run_privatehealth
+from src.scrapers.phi.state_health import run as run_state_health
 from src.scrapers.macro.abs_scraper import run as run_abs
 from src.commons.tiers import TIER
 
@@ -42,23 +41,22 @@ class ScraperOrchestrator:
         self.local = local
         self.scrapers = [
             # Public Sentiment
-            ("canstar_health_awards", run_canstar,     TIER.PUBLIC_SENTIMENT),
-            ("ama",                   run_ama,         TIER.PUBLIC_SENTIMENT),
-            ("choice_articles",       run_choice,      TIER.PUBLIC_SENTIMENT),
-            ("news_articles",         run_news,        TIER.PUBLIC_SENTIMENT),
-            ("abc_news",              run_abc_news,    TIER.PUBLIC_SENTIMENT),
-            ("ozbargain_deals",       run_ozbargain,   TIER.PUBLIC_SENTIMENT),
-            ("sbs_news",              run_sbs_news,    TIER.PUBLIC_SENTIMENT),
-            ("the_guardian_au",       run_guardian,    TIER.PUBLIC_SENTIMENT),
+            ("canstar_health_awards", run_canstar,      TIER.PUBLIC_SENTIMENT),
+            ("ama",                   run_ama,          TIER.PUBLIC_SENTIMENT),
+            ("choice_articles",       run_choice,       TIER.PUBLIC_SENTIMENT),
+            ("news_articles",         run_news,         TIER.PUBLIC_SENTIMENT),
+            ("abc_news",              run_abc_news,     TIER.PUBLIC_SENTIMENT),
+            ("ozbargain_deals",       run_ozbargain,    TIER.PUBLIC_SENTIMENT),
+            ("sbs_news",              run_sbs_news,     TIER.PUBLIC_SENTIMENT),
+            ("the_guardian_au",       run_guardian,     TIER.PUBLIC_SENTIMENT),
             # Stock Market
-            
             ("stock_prices",          run_stock_prices, TIER.COMPETITOR),
             # Medibank Specific
-            ("medibank_asx",          run_medibank_asx,    TIER.MEDIBANK_SPECIFIC),
-            ("nib_asx",               run_nib_asx,         TIER.MEDIBANK_SPECIFIC),
-            ("medibank_media",        run_medibank_media,  TIER.MEDIBANK_SPECIFIC),
-            ("hbf_offers",            run_hbf_offers,      TIER.MEDIBANK_SPECIFIC),
-            ("hcf_offers",            run_hcf_offers,      TIER.MEDIBANK_SPECIFIC),
+            ("medibank_asx",          run_medibank_asx,   TIER.MEDIBANK_SPECIFIC),
+            ("nib_asx",               run_nib_asx,        TIER.MEDIBANK_SPECIFIC),
+            ("medibank_media",        run_medibank_media, TIER.MEDIBANK_SPECIFIC),
+            ("hbf_offers",            run_hbf_offers,     TIER.MEDIBANK_SPECIFIC),
+            ("hcf_offers",            run_hcf_offers,     TIER.MEDIBANK_SPECIFIC),
             # PHI Industry
             ("accc",                  run_accc,          TIER.PHI),
             ("apra",                  run_apra,          TIER.PHI),
@@ -69,6 +67,7 @@ class ScraperOrchestrator:
             ("newsrooms",             run_newsrooms,     TIER.PHI),
             ("ombudsman",             run_ombudsman,     TIER.PHI),
             ("privatehealth",         run_privatehealth, TIER.PHI),
+            ("state_health",          run_state_health,  TIER.PHI),
             # Macro
             ("abs",                   run_abs,           TIER.MACRO),
         ]
@@ -76,12 +75,6 @@ class ScraperOrchestrator:
     def run_all(self):
         summary = {}
         pipeline_start = time.time()
-
-        if self.local:
-            data_root = "data"
-            if os.path.exists(data_root):
-                shutil.rmtree(data_root)
-                logger.info("Deleted existing data/ directory for a fresh run")
 
         for name, fn, tier in self.scrapers:
             scraper_start = time.time()

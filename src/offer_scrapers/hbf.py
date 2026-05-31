@@ -13,17 +13,18 @@ from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
+from ..commons.config import MODE_AWS, MODE_LOCAL
+
 from ..commons.dataset import DATASET
 from ..commons.offers_data import (
-    COVER_TYPES, EXCEL_COL_MAP, SOURCE,
+    COVER_TYPES, SOURCE,
     HBF_ROOT_URL, HBF_TERMS_URL, HBF_SCRAPE_PAGES
 )
 from ..commons.tiers import TIER
-from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3
 from ..utils.offer_helpers import (
-    _clean_text, _write_results_to_workbook, load_last_offer,
-    save_locally, update_excel, update_excel_on_s3
+    _clean_text, save_locally, update_excel, update_excel_on_s3
 )
+from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3, load_last_offer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +34,7 @@ log = logging.getLogger(__name__)
 
 # ---- Config -----------------------------------------------------------------
 BRAND           = 'HBF'
-LAST_OFFER_FILE = f'offer_files/{SOURCE.HBF.value}_last_offer.txt'
+LAST_OFFER_FILE = f'data/comp_offer/offer_txt/{SOURCE.HBF.value}_last_offer.txt'
 UPDATE_S3_EXCEL = os.getenv('UPDATE_S3_EXCEL', '1').strip().lower() not in ('0', 'false', 'no')
 
 
@@ -273,7 +274,7 @@ def aggregate_offers(all_offers):
 
 
 # ---- Main Scrape ------------------------------------------------------------
-def scrape_hbf():
+def scrape_hbf(local=None):
     """Scrape all HBF pages and return (text, results)."""
     all_offers = []
 
@@ -308,12 +309,13 @@ def scrape_hbf():
     results = aggregate_offers(all_offers)
 
     current_text = json.dumps(results, ensure_ascii=False)
-    last_offer   = load_last_offer(LAST_OFFER_FILE)
+    mode         = MODE_LOCAL if local else MODE_AWS
+    last_offer   = load_last_offer(LAST_OFFER_FILE, mode=mode)
     if last_offer and last_offer == current_text:
         offer_status = "OFFER STATUS: UNCHANGED from last week"
     else:
         offer_status = "OFFER STATUS: NEW or CHANGED this week"
-    save_current_offer(current_text, LAST_OFFER_FILE)
+    save_current_offer(current_text, LAST_OFFER_FILE, mode=mode)
     log.info(offer_status)
 
     run_date = datetime.now(timezone.utc).isoformat()
@@ -345,7 +347,7 @@ def run(local: Optional[str] = None):
     log.info("Starting scrape: %s / %s", SOURCE.HBF.value, DATASET.DIRECT_OFFERS.value)
     log.info("=" * 50)
 
-    content, results = scrape_hbf()
+    content, results = scrape_hbf(local)     # ✅ pass local
     if not content:
         log.warning("No content found — file will not be saved")
         return False
@@ -360,11 +362,10 @@ def run(local: Optional[str] = None):
     )
 
     if local:
-        save_locally(payload, SOURCE.HBF.value, DATASET.DIRECT_OFFERS.value)
-        update_excel(results, BRAND)
+        save_locally(payload, SOURCE.HBF.value, DATASET.DIRECT_OFFERS.value, local)
+        update_excel(results, BRAND, local_dir=local)
     else:
         upload_to_s3(payload, is_offer_json=True)
-        update_excel(results, BRAND)
         if UPDATE_S3_EXCEL:
             update_excel_on_s3(results, BRAND)
 

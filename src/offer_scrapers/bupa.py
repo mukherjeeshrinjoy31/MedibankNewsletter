@@ -360,11 +360,10 @@ def run(local: Optional[str] = None):
     )
 
     if local:
-        save_locally(payload, SOURCE.BUPA.value, DATASET.COMPETITOR_OFFERS.value)
-        update_excel(structured_offers, BRAND, merge_fn=merge_bupa_offers)
+        save_locally(payload, SOURCE.BUPA.value, DATASET.COMPETITOR_OFFERS.value, local)
+        update_excel(structured_offers, BRAND, merge_fn=merge_bupa_offers, local_dir=local)
     else:
         upload_to_s3(payload, is_offer_json=True)
-        update_excel(structured_offers, BRAND, merge_fn=merge_bupa_offers)
         if UPDATE_S3_EXCEL:
             update_excel_on_s3(structured_offers, BRAND, merge_fn=merge_bupa_offers)
 

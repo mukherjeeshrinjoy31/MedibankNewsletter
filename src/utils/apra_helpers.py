@@ -1,14 +1,17 @@
+import logging
 import os
 import time
+import shutil
+import warnings
 
 import pandas as pd
 import requests
-import shutil
-import warnings
 
 from ..commons.data import HEADERS
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+logger = logging.getLogger(__name__)
 
 SKIP_SHEETS = {
     "cover", "notes", "explanatory notes", "about this report",
@@ -51,11 +54,11 @@ def download_and_extract(xlsx_links, content_start_string, output_dir="data/apra
 
     for title, href in xlsx_links[:5]:
         filename = href.split("/")[-1]
-        print(f"Downloading: {filename}...")
+        logger.info("Downloading: %s...", filename)
         try:
             r = requests.get(href, headers=HEADERS, timeout=60)
             if r.status_code != 200:
-                print(f"✗ Failed: {r.status_code}")
+                logger.warning("Failed to download %s: HTTP %s", filename, r.status_code)
                 continue
 
             filepath = os.path.join(output_dir, filename)
@@ -65,16 +68,17 @@ def download_and_extract(xlsx_links, content_start_string, output_dir="data/apra
             try:
                 sheet_content, sheets_extracted = extract_sheets_from_excel(filepath, title)
                 content += sheet_content
-                print(f"✓ {filename} — {sheets_extracted} sheets extracted")
+                logger.info("%s — %d sheets extracted", filename, sheets_extracted)
 
             except Exception as e:
-                print(f"✗ Excel read error: {type(e).__name__}: {e}")
+                logger.exception("Excel read error for %s: %s", filename, e)
                 content += f"=== {title} ===\nDownloaded but could not extract text. Error: {e}\nURL: {href}\n\n"
 
         except Exception as e:
-            print(f"✗ Error: {e}")
+            logger.exception("Error downloading %s: %s", filename, e)
 
         time.sleep(1)
+
     shutil.rmtree(output_dir)
-    print(f"Deleted folder: {output_dir}")
+    logger.info("Deleted folder: %s", output_dir)
     return content

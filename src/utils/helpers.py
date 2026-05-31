@@ -13,7 +13,7 @@ import feedparser
 import pdfplumber
 import requests
 
-from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
+from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER, MODE_LOCAL
 from ..commons.data import HEADERS, NEWS_KEYWORDS, WHOLE_WORD_KEYWORDS
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def build_payload(content, source: str, dataset: str, scraped_at: str, tier: str
 def upload_to_s3(payload: dict, is_offer_json: bool = False) -> None:
     """Upload payload JSON to S3."""
     s3  = boto3.client("s3", region_name=AWS_REGION)
-    prefix = "raw/offer_json" if is_offer_json else f"raw/{payload['tier']}"
+    prefix = "raw/comp_offer/offer_json" if is_offer_json else f"raw/newsletter/json/{payload['tier']}"
     key = f"{prefix}/{payload['source']}_{payload['dataset']}_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
     s3.put_object(
         Bucket=BUCKET,
@@ -69,8 +69,8 @@ def upload_to_s3(payload: dict, is_offer_json: bool = False) -> None:
 
 
 def save_local(payload: dict) -> str:
-    """Save payload to data/{tier}/{source}_{dataset}_{run_date}.json."""
-    tier_dir = os.path.join("data", payload["tier"])
+    """Save payload to data/newsletter/{tier}/{source}_{dataset}_{run_date}.json."""
+    tier_dir = os.path.join("data", "newsletter", payload["tier"])
     os.makedirs(tier_dir, exist_ok=True)
 
     run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -200,7 +200,7 @@ def extract_pdf_text(filepath: str) -> str:
                     text += page_text + "\n"
         return " ".join(text.split()).strip()
     except Exception as e:
-        logger.error("PDF extraction error: %s", e)
+        logger.exception("PDF extraction error: %s", e)
         return ""
 
 
@@ -208,25 +208,58 @@ def extract_pdf_text(filepath: str) -> str:
 # Offer File Helpers
 # ---------------------------------------------------------------------------
 
-def load_last_offer(last_offer_file: str) -> Optional[str]:
-    """Load last week's offer text from file."""
-    try:
-        if os.path.exists(last_offer_file):
-            with open(last_offer_file, "r", encoding="utf-8") as f:
-                return f.read().strip()
-    except Exception as e:
-        logger.warning("Could not load last offer: %s", e)
-    return None
+def load_last_offer(last_offer_file: str, mode: str = "aws", s3_prefix: str = "raw/comp_offer/offer_txt") -> Optional[str]:
+    if mode == "local":
+        try:
+            if os.path.exists(last_offer_file):
+                with open(last_offer_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                logger.info("Loaded last offer from local: %s", last_offer_file)
+                return content
+        except Exception as e:
+            logger.warning("Could not read local offer file %s: %s", last_offer_file, e)
+        logger.info("No previous offer found locally — first run")
+        return None
+    else:
+        try:
+            import boto3
+            s3 = boto3.client("s3", region_name=AWS_REGION)
+            filename = os.path.basename(last_offer_file)
+            key = f"{s3_prefix}/{filename}"
+            obj = s3.get_object(Bucket=BUCKET, Key=key, ExpectedBucketOwner=EXPECTED_BUCKET_OWNER)
+            content = obj["Body"].read().decode("utf-8").strip()
+            logger.info("Loaded last offer from S3: s3://%s/%s", BUCKET, key)
+            return content
+        except Exception:
+            logger.info("No previous offer found in S3 — first run")
+            return None
 
 
-def save_current_offer(offer_text: str, path: str) -> None:
-    """Save this week's offer text to file for next week's comparison."""
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(offer_text)
-    except Exception as e:
-        logger.warning("Could not save current offer: %s", e)
+def save_current_offer(offer_text: str, path: str, mode: str = "aws", s3_prefix: str = "raw/comp_offer/offer_txt") -> None:
+    if mode == MODE_LOCAL:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(offer_text)
+            logger.info("Saved current offer locally: %s", path)
+        except Exception as e:
+            logger.warning("Could not save offer locally: %s", e)
+    else:
+        try:
+            import boto3
+            s3 = boto3.client("s3", region_name=AWS_REGION)
+            filename = os.path.basename(path)
+            key = f"{s3_prefix}/{filename}"
+            s3.put_object(
+                Bucket=BUCKET,
+                Key=key,
+                Body=offer_text.encode("utf-8"),
+                ContentType="text/plain",
+                ExpectedBucketOwner=EXPECTED_BUCKET_OWNER
+            )
+            logger.info("Saved current offer to S3: s3://%s/%s", BUCKET, key)
+        except Exception as e:
+            logger.warning("Could not save offer to S3: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +296,7 @@ def fetch_google_news_rss(rss_url: str, header: str, cutoff_days: int) -> str:
         logger.info("Found %d articles via Google News RSS", articles_added)
 
     except Exception as e:
-        logger.error("Google News RSS failed: %s", e)
+        logger.exception("Google News RSS failed: %s", e)
         content += f"Google News RSS failed: {e}\n"
 
     return content.strip()

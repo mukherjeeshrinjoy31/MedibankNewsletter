@@ -13,19 +13,21 @@ import os
 import re
 from datetime import datetime, timezone
 
+from ..commons.config import MODE_AWS, MODE_LOCAL
+
 from ..commons.data import HEADERS
 from ..commons.dataset import DATASET
 from ..commons.offers_data import COVER_TYPES, SOURCE, MEDIBANK_ROOT_URL, MEDIBANK_SCRAPE_PAGES, MEDIBANK_OFFER_URL, TERM_HEADINGS, TERMS_STOP_MARKERS
 from ..commons.tiers import TIER
-from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3
+from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3, load_last_offer
 from ..utils.offer_helpers import (
     _clean_text, aggregate_offers, detect_cover_type, extract_offer,
     extract_end_date, parse_html, save_locally, update_excel,
-    update_excel_on_s3, load_last_offer
+    update_excel_on_s3
 )
 
 BRAND           = 'Medibank'
-LAST_OFFER_FILE = f'offer_files/{SOURCE.MEDIBANK.value}_last_offer.txt'
+LAST_OFFER_FILE = f'data/comp_offer/offer_txt/{SOURCE.MEDIBANK.value}_last_offer.txt'
 UPDATE_S3_EXCEL = os.getenv('UPDATE_S3_EXCEL', '1').strip().lower() not in ('0', 'false', 'no')
 
 logging.basicConfig(
@@ -139,7 +141,7 @@ def find_offers_on_page(url, cover_hint=None):
         return []
 
 
-def scrape_medibank():
+def scrape_medibank(local=None):
     """Scrape all pages, aggregate by cover type, and return (text, results)."""
     all_offers = []
     for page in MEDIBANK_SCRAPE_PAGES:
@@ -149,12 +151,13 @@ def scrape_medibank():
     results = aggregate_offers(all_offers, MEDIBANK_ROOT_URL, MEDIBANK_OFFER_URL)
 
     current_text = json.dumps(results, ensure_ascii=False)
-    last_offer   = load_last_offer(LAST_OFFER_FILE)
+    mode         = MODE_LOCAL if local else MODE_AWS
+    last_offer   = load_last_offer(LAST_OFFER_FILE, mode=mode)
     if last_offer and last_offer == current_text:
         offer_status = "OFFER STATUS: UNCHANGED from last week"
     else:
         offer_status = "OFFER STATUS: NEW or CHANGED this week"
-    save_current_offer(current_text, LAST_OFFER_FILE)
+    save_current_offer(current_text, LAST_OFFER_FILE, mode=mode)
     log.info(offer_status)
 
     run_date = datetime.now(timezone.utc).isoformat()
@@ -185,7 +188,7 @@ def run(local: Optional[str] = None):
     log.info("Starting scrape: %s / %s", SOURCE.MEDIBANK.value, DATASET.DIRECT_OFFERS.value)
     log.info("=" * 50)
 
-    content, results = scrape_medibank()
+    content, results = scrape_medibank(local)     # ✅ pass local
     if not content:
         log.warning("No content found — file will not be saved")
         return False
@@ -200,11 +203,10 @@ def run(local: Optional[str] = None):
     )
 
     if local:
-        save_locally(payload, SOURCE.MEDIBANK.value, DATASET.DIRECT_OFFERS.value)
-        update_excel(results, BRAND)
+        save_locally(payload, SOURCE.MEDIBANK.value, DATASET.DIRECT_OFFERS.value, local)
+        update_excel(results, BRAND, local_dir=local)
     else:
         upload_to_s3(payload, is_offer_json=True)
-        update_excel(results, BRAND)
         if UPDATE_S3_EXCEL:
             update_excel_on_s3(results, BRAND)
 

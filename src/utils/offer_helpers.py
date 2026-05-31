@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+import boto3
 import io
 import json
 import logging
@@ -12,7 +13,6 @@ import openpyxl
 import requests
 
 from ..commons.data import HEADERS
-
 from ..commons.config import AWS_REGION, BUCKET_COMP_OFFER, EXPECTED_BUCKET_OWNER
 from ..commons.offers_data import BRANDS, COVER_CATEGORY, COVER_TYPES, OFFER_EXCEL_FILE, EXCEL_COL_MAP, OFFER_KEYWORDS
 
@@ -23,7 +23,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-S3_EXCEL_KEY = os.getenv('S3_EXCEL_KEY', f'raw/excel/{OFFER_EXCEL_FILE}')
+S3_EXCEL_KEY = os.getenv('S3_EXCEL_KEY', f'raw/comp_offer/offer_excel/{OFFER_EXCEL_FILE}')
 
 
 def detect_cover_type(text):
@@ -208,18 +208,9 @@ def aggregate_offers(all_offers, root_url, offer_url):
     return final
 
 
-def load_last_offer(last_offer_file):
-    try:
-        if os.path.exists(last_offer_file):
-            with open(last_offer_file, "r", encoding="utf-8") as f:
-                return f.read().strip()
-    except Exception as e:
-        logger.warning("Could not load last offer: %s", e)
-    return None
-
 def save_locally(payload, source, dataset, local_dir="."):
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    output_dir = os.path.join(local_dir, "data", "offer")      # ✅ data/offer subfolder
+    output_dir = os.path.join(local_dir, "comp_offer", "offer_json")
     os.makedirs(output_dir, exist_ok=True)
     filename = os.path.join(output_dir, f"{source}_{dataset}_{date}.json")
     try:
@@ -298,10 +289,14 @@ def _write_results_to_workbook(wb, results, brand):
     return rows_updated
 
 
-def update_excel(results_or_offers, brand: str, merge_fn=None, filepath=OFFER_EXCEL_FILE) -> None:
+def update_excel(results_or_offers, brand: str, merge_fn=None, filepath=OFFER_EXCEL_FILE, local_dir=".") -> None:
+    if local_dir != ".":
+        filepath = os.path.join(local_dir, "comp_offer", "offer_excel", OFFER_EXCEL_FILE)
+
     if not os.path.exists(filepath):
         logger.warning("Excel file not found: %s — skipping update", filepath)
         return
+
     wb = openpyxl.load_workbook(filepath)
     if brand.lower() == "finder":
         fill_excel_for_finder(wb, results_or_offers)
@@ -343,15 +338,17 @@ def update_excel_on_s3(results_or_offers, brand: str, merge_fn=None, bucket=BUCK
     )
     logger.info("Excel updated on S3: %s rows written to s3://%s/%s", brand, bucket, key)
 
+
 def fetch_page(url: str) -> BeautifulSoup | None:
     try:
         r = requests.get(url, headers=HEADERS, timeout=30)
         if r.status_code == 200:
             return BeautifulSoup(r.text, "html.parser")
-        print(f"  ✗ {url}: {r.status_code}")
+        logger.warning("Failed to fetch %s: HTTP %s", url, r.status_code)
     except Exception as e:
-        print(f"  ✗ {url}: {e}")
+        logger.warning("Failed to fetch %s: %s", url, e)
     return None
+
 
 def extract_offer_blocks(soup: BeautifulSoup) -> list[str]:
     found = []
@@ -361,6 +358,7 @@ def extract_offer_blocks(soup: BeautifulSoup) -> list[str]:
             if 20 < len(text) < 600 and text not in found:
                 found.append(text)
     return found[:30]
+
 
 def scrape_rss(brand: str) -> list[str]:
     logger.info("Fetching %s offers via Google News RSS...", brand)
@@ -372,12 +370,14 @@ def scrape_rss(brand: str) -> list[str]:
     logger.info("Found %d RSS articles for %s", len(entries), brand)
     return entries
 
+
 def detect_cover_type_from_keywords(text: str, cover_type_keywords: dict) -> str | None:
     lower = text.lower()
     for cover_type, keywords in cover_type_keywords.items():
         if any(kw in lower for kw in keywords):
             return cover_type
     return None
+
 
 def fill_excel(wb, structured_offers: dict, brand: str, merge_fn) -> None:
     ws = wb["table"]
@@ -412,14 +412,17 @@ def fill_excel(wb, structured_offers: dict, brand: str, merge_fn) -> None:
 
     logger.info("Filled %s Direct rows in Excel", brand)
 
+
 def cat_sort_key(cat: str) -> int:
     try:
         return COVER_CATEGORY.index(cat)
     except ValueError:
         return 99
 
+
 def format_cats(cats: list) -> str:
     return "/".join(sorted(cats, key=cat_sort_key))
+
 
 def collapse_categories(category_records: list) -> dict:
     if not category_records:
@@ -450,7 +453,7 @@ def collapse_categories(category_records: list) -> dict:
 
         parts = []
         for val, cats in sorted(val_to_cats.items(),
-                                key=lambda kv: cat_sort_key(min(kv[1], key=cat_sort_key))):
+                                key=lambda kv: cat_sort_key(minimum := min(kv[1], key=cat_sort_key))):
             if val:
                 parts.append(f"{format_cats(cats)}: {val}")
 
@@ -458,9 +461,10 @@ def collapse_categories(category_records: list) -> dict:
 
     return result
 
+
 def fill_excel_for_finder(wb: openpyxl.Workbook, offers: list) -> None:
     ws = wb["table"]
-    col_idx = _header_index(ws)                                  # ✅ shared
+    col_idx = _header_index(ws)
 
     grouped = defaultdict(list)
     for offer in offers:
@@ -488,7 +492,8 @@ def fill_excel_for_finder(wb: openpyxl.Workbook, offers: list) -> None:
             if column is not None:
                 value = collapsed.get(field)
                 row[column].value = value if value else None
-                
+
+
 def make_browser_context(playwright):
     browser = playwright.chromium.launch(
         headless=True,

@@ -1,6 +1,8 @@
 import logging
 from typing import Optional
 
+from ...commons.config import MODE_AWS, MODE_LOCAL
+
 from ...commons.data import BOILERPLATE, HBF_URL, OFFER_KEYWORDS
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
@@ -10,7 +12,7 @@ from ...utils.helpers import (
 )
 
 SOURCE          = "hbf"
-LAST_OFFER_FILE = "offer_files/hbf_last_offer.txt"
+LAST_OFFER_FILE = "data/newsletter/offer_txt/hbf_last_offer.txt"
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Scraping
 # ---------------------------------------------------------------------------
 
-def scrape() -> Optional[str]:
+def scrape(local=None) -> Optional[str]:
     """Scrape HBF hero banner and detect current promotional offer."""
     soup = fetch_url(HBF_URL)
     if not soup:
@@ -47,7 +49,8 @@ def scrape() -> Optional[str]:
     offer_detection = "PROMOTION DETECTED" if has_offer else "NO CURRENT PROMOTION FOUND"
     logger.info("Offer detection: %s", offer_detection)
 
-    last_offer = load_last_offer(LAST_OFFER_FILE)
+    mode = MODE_LOCAL if local else MODE_AWS
+    last_offer = load_last_offer(LAST_OFFER_FILE, mode=mode, s3_prefix="raw/newsletter/offer_txt")
     if last_offer and last_offer == text:
         offer_status = "OFFER STATUS: UNCHANGED from last week"
         logger.info("Offer unchanged from last week.")
@@ -55,7 +58,7 @@ def scrape() -> Optional[str]:
         offer_status = "OFFER STATUS: NEW or CHANGED this week"
         logger.info("Offer is new or changed this week.")
 
-    save_current_offer(text, LAST_OFFER_FILE)
+    save_current_offer(text, LAST_OFFER_FILE, mode=mode, s3_prefix="raw/newsletter/offer_txt")
 
     return (
         f"Source: {SOURCE} | Dataset: {DATASET.CUSTOMER_OFFERS.value} | "
@@ -74,7 +77,7 @@ def scrape() -> Optional[str]:
 def run(local: Optional[str] = None) -> bool:
     """Scrape HBF offers and upload to S3 or save locally."""
     logger.info("Scraping offers from competitor HBF from: %s", HBF_URL)
-    content = scrape()
+    content = scrape(local)                  # ✅ pass local
 
     if not content:
         logger.warning("No content extracted — skipping.")

@@ -99,7 +99,7 @@ def find_report_url(listing_url: str, keyword: str) -> Optional[str]:
         if href.startswith("/"):
             href = base_url + href
 
-        logger.info("Checking report: '%s'\n  %s", title, href)
+        logger.info("Checking report: '%s' — %s", title, href)
         pub_date = get_report_publish_date(href)
 
         if pub_date:

@@ -14,15 +14,17 @@ import re
 from urllib.parse import urljoin
 from datetime import datetime, timezone
 
+from ..commons.config import MODE_AWS, MODE_LOCAL
+
 from ..commons.data import HEADERS
 from ..commons.dataset import DATASET
 from ..commons.offers_data import AHM_OFFER_URL, AHM_ROOT_URL, AHM_SCRAPE_PAGES, COVER_TYPES, SOURCE
 from ..commons.tiers import TIER
-from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3
-from ..utils.offer_helpers import _clean_text, aggregate_offers, detect_cover_type, extract_offer, parse_html, save_locally, update_excel, update_excel_on_s3, load_last_offer
+from ..utils.helpers import build_payload, fetch_run_date, save_current_offer, upload_to_s3, load_last_offer
+from ..utils.offer_helpers import _clean_text, aggregate_offers, detect_cover_type, extract_offer, parse_html, save_locally, update_excel, update_excel_on_s3
 
 BRAND           = 'AHM'
-LAST_OFFER_FILE = f'offer_files/{SOURCE.AHM.value}_last_offer.txt'
+LAST_OFFER_FILE = f'data/comp_offer/offer_txt/{SOURCE.AHM.value}_last_offer.txt'
 UPDATE_S3_EXCEL = os.getenv('UPDATE_S3_EXCEL', '1').strip().lower() not in ('0', 'false', 'no')
 
 logging.basicConfig(
@@ -283,7 +285,7 @@ def find_offers_on_page(url, cover_hint=None):
         return []
 
 
-def scrape_ahm():
+def scrape_ahm(local=None):
     """Scrape all pages, aggregate by cover type, and return (text, results)."""
     all_offers = []
     for page in AHM_SCRAPE_PAGES:
@@ -293,17 +295,18 @@ def scrape_ahm():
     results = aggregate_offers(all_offers, AHM_ROOT_URL, AHM_OFFER_URL)
 
     current_text = json.dumps(results, ensure_ascii=False)
-    last_offer   = load_last_offer(LAST_OFFER_FILE)
+    mode = MODE_LOCAL if local else MODE_AWS
+    last_offer   = load_last_offer(LAST_OFFER_FILE, mode=mode)
     if last_offer and last_offer == current_text:
         offer_status = "OFFER STATUS: UNCHANGED from last week"
     else:
         offer_status = "OFFER STATUS: NEW or CHANGED this week"
-    save_current_offer(current_text, LAST_OFFER_FILE)
+    save_current_offer(current_text, LAST_OFFER_FILE, mode=mode)
     log.info(offer_status)
 
     run_date = datetime.now(timezone.utc).isoformat()
     lines = [
-        f"Source: {SOURCE.AHM.value} | Dataset: {DATASET.DIRECT_OFFERS.value} | Run Date: {run_date}",  # ✅ fixed
+        f"Source: {SOURCE.AHM.value} | Dataset: {DATASET.DIRECT_OFFERS.value} | Run Date: {run_date}",
         f"{offer_status}",
         "",
         f"{BRAND} Direct Offers (aggregated from {len(AHM_SCRAPE_PAGES)} pages):",
@@ -329,7 +332,7 @@ def run(local: Optional[str] = None):
     log.info("Starting scrape: %s / %s", SOURCE.AHM.value, DATASET.DIRECT_OFFERS.value)
     log.info("=" * 50)
 
-    content, results = scrape_ahm()
+    content, results = scrape_ahm(local)
     if not content:
         log.warning("No content found — file will not be saved")
         return False
@@ -344,10 +347,9 @@ def run(local: Optional[str] = None):
     )
 
     if local:
-        save_locally(payload, SOURCE.AHM.value, DATASET.DIRECT_OFFERS.value)
-        update_excel(results, BRAND)
+        save_locally(payload, SOURCE.AHM.value, DATASET.DIRECT_OFFERS.value, local)
+        update_excel(results, BRAND, local_dir=local)
     else:
-        update_excel(results, BRAND)
         upload_to_s3(payload, is_offer_json=True)
         if UPDATE_S3_EXCEL:
             update_excel_on_s3(results, BRAND)
@@ -355,12 +357,14 @@ def run(local: Optional[str] = None):
     log.info("Scrape complete")
     return True
 
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", metavar="DIR", nargs="?", const="data", help="Save outputs locally")
     args = parser.parse_args()
     run(local=args.local)
+
 
 if __name__ == "__main__":
     main()

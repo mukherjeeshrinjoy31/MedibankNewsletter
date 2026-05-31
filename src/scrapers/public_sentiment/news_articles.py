@@ -1,22 +1,22 @@
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
-import json
+import logging
 import os
 import re
 from typing import Optional, List, Set
 
-import boto3
 import requests
 import trafilatura
 import xml.etree.ElementTree as ET
 
-SOURCE = "news"
+from ...commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
+from ...commons.dataset import DATASET
+from ...commons.tiers import TIER
+from ...utils.helpers import build_payload, fetch_run_date, save_local, upload_to_s3
 
-# ---- Config ------------------------------------------------------
-TIER = "public-sentiment"
-DATASET = "news"
-BUCKET = "p000268ds-medibank-intelligence-us"
+SOURCE      = "news"
 CUTOFF_DATE = datetime.now(timezone.utc) - timedelta(days=7)
+
 SOURCES = {
     "abc": {
         "url": "https://www.abc.net.au/",
@@ -44,21 +44,22 @@ SOURCES = {
 }
 
 KEYWORDS = [
-        "medibank", "bupa", "nib", "hcf", "hbf",
-        "health insurance", "health fund",
-        "health cover", "health insurer", "private health"
-    ]
+    "medibank", "bupa", "nib", "hcf", "hbf",
+    "health insurance", "health fund",
+    "health cover", "health insurer", "private health"
+]
 
-# Keywords that need whole-word matching (short words that appear as substrings)
-WHOLE_WORD_KEYWORDS     = {"nib", "hcf", "hbf", "bupa"}
-HEADERS                 = {"User-Agent": "Mozilla/5.0"}
-DATE_FORMATS            = [
+WHOLE_WORD_KEYWORDS = {"nib", "hcf", "hbf", "bupa"}
+HEADERS             = {"User-Agent": "Mozilla/5.0"}
+DATE_FORMATS        = [
     "%a, %d %b %Y %H:%M:%S %Z",
     "%a, %d %b %Y %H:%M:%S %z",
     "%Y-%m-%dT%H:%M:%S%z",
     "%Y-%m-%dT%H:%M:%SZ"
-
 ]
+
+logger = logging.getLogger(__name__)
+
 
 # ---- Helper Functions ------------------------------------------------------
 
@@ -72,11 +73,13 @@ class MLStripper(HTMLParser):
 
     def get_data(self) -> str:
         return "".join(self.parts).strip()
-    
+
+
 def strip_html(raw: str) -> str:
     stripper = MLStripper()
     stripper.feed(raw or "")
     return stripper.get_data()
+
 
 def parse_date(date_str: str, date_formats: Optional[List[str]] = None) -> Optional[datetime]:
     if not date_str:
@@ -90,65 +93,21 @@ def parse_date(date_str: str, date_formats: Optional[List[str]] = None) -> Optio
             return dt
         except ValueError:
             continue
-    return None 
+    return None
 
-def build_payload(content: str, source: str, dataset: str, scrapped_at: datetime, tier: str, url: str) -> dict:
-    return {
-        'source': source,
-        'tier': tier,
-        'dataset': dataset,
-        'scraped_at': scrapped_at,
-        'url': url,
-        'content': content
-    }
-
-def save_local(payload: dict) -> str:
-    """
-    Save payload to data/{tier}/{source}_{dataset}_{dataset}_{run_date}.json.
-    Does NOT delete the data directory.
-    Returns the full path of the saved file.
-    """
-    # Build directory path
-    tier_dir = os.path.join("data", payload["tier"])
-    os.makedirs(tier_dir, exist_ok=True)
-
-    # Build run date
-    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    # Build filename
-    dataset = payload["dataset"]
-    filename = f"{payload['source']}_{dataset}_{run_date}.json"
-    path = os.path.join(tier_dir, filename)
-
-    # Write file
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-    print(f"Saved locally: {path}")
-
-def upload_to_s3(payload: dict) -> None:
-    s3 = boto3.client("s3", region_name="us-east-1")
-    key = f"raw/{payload['tier']}/{payload['source']}_{payload['dataset']}_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
-        Body=json.dumps(payload, ensure_ascii=False),
-        ContentType='application/json'
-    )
-    print(f"Uploaded: s3://{BUCKET}/{key}")
 
 # ---- Keyword Matching ------------------------------------------------------
 
 def keyword_found(kw: str, text: str) -> bool:
-    """Match keyword — whole word matching for short ambiguous terms."""
     if kw in WHOLE_WORD_KEYWORDS:
         return bool(re.search(rf'\b{re.escape(kw)}\b', text))
     return kw in text
 
 
 def matches_keywords(text: str) -> bool:
-    """Return True if text matches at least `matches` keyword groups."""
     text = text.lower()
     return any(keyword_found(kw, text) for kw in KEYWORDS)
+
 
 # ---- Article Fetching ------------------------------------------------------
 
@@ -165,7 +124,7 @@ def fetch_article_text(url: str) -> str:
         )
         return text or ""
     except Exception as e:
-        print(f"    Could not fetch article text from {url}: {e}")
+        logger.warning("Could not fetch article text from %s: %s", url, e)
         return ""
 
 
@@ -175,13 +134,13 @@ def fetch_feed(feed_url: str) -> List[dict]:
         response = requests.get(feed_url, timeout=10, headers=HEADERS)
         response.raise_for_status()
     except requests.RequestException as e:
-        print(f"    Error fetching feed {feed_url}: {e}")
+        logger.warning("Error fetching feed %s: %s", feed_url, e)
         return []
 
     try:
         root = ET.fromstring(response.content)
     except ET.ParseError as e:
-        print(f"    Error parsing XML from feed {feed_url}: {e}")
+        logger.warning("Error parsing XML from feed %s: %s", feed_url, e)
         return []
 
     ns = {"atom": "http://www.w3.org/2005/Atom"}
@@ -195,27 +154,27 @@ def fetch_feed(feed_url: str) -> List[dict]:
                 el = _item.find(f"atom:{tag}", ns)
             return (el.text or '').strip() if el is not None else ''
 
-        title = strip_html(text('title'))
+        title       = strip_html(text('title'))
         description = strip_html(text('description') or text('summary'))
-        url = text('link') or text("id")
+        url         = text('link') or text("id")
         pub_date_str = text('pubDate') or text('published') or text('updated')
-        pub_date = parse_date(pub_date_str)
+        pub_date    = parse_date(pub_date_str)
 
         if pub_date and pub_date < CUTOFF_DATE:
             continue
 
-        full_text = fetch_article_text(url)
+        full_text     = fetch_article_text(url)
         combined_text = f"{title} {description} {full_text}"
 
         if not matches_keywords(combined_text):
             continue
 
-        print(f"  Matched article: {title[:80]}")
+        logger.info("Matched article: %s", title[:80])
         articles.append({
-            "title": title,
+            "title":     title,
             "published": pub_date.isoformat() if pub_date else pub_date_str,
-            "url": url,
-            "body": full_text if full_text else description
+            "url":       url,
+            "body":      full_text if full_text else description
         })
 
     return articles
@@ -226,10 +185,10 @@ def fetch_feed(feed_url: str) -> List[dict]:
 def scrape_source(source_id: str, source_config: dict) -> Optional[List[dict]]:
     """Scrape all feeds for a source, deduplicate and return articles."""
     all_articles: List[dict] = []
-    seen_urls: Set[str] = set()
+    seen_urls:    Set[str]   = set()
 
     for feed_url in source_config["feeds"]:
-        print(f"\nScraping feed: {feed_url}")
+        logger.info("Scraping feed: %s", feed_url)
         for article in fetch_feed(feed_url):
             url = article["url"]
             if url in seen_urls:
@@ -238,40 +197,24 @@ def scrape_source(source_id: str, source_config: dict) -> Optional[List[dict]]:
             all_articles.append(article)
 
     if not all_articles:
-        print(f"No articles found for source {source_id}.")
+        logger.warning("No articles found for source %s", source_id)
         return None
 
     all_articles.sort(key=lambda x: x["published"], reverse=True)
 
     return [
         {
-            "index": i,
-            "title": a["title"],
+            "index":     i,
+            "title":     a["title"],
             "published": a["published"],
-            "url": a["url"],
-            "body": a["body"]
+            "url":       a["url"],
+            "body":      a["body"]
         }
         for i, a in enumerate(all_articles, start=1)
     ]
 
-def lambda_handler(event, context):
-    for source_id, source_cfg in SOURCES.items():
-        content = scrape_source(source_id, source_cfg)
-        if not content:
-            print(f"[SKIP] {source_id} — no content.")
-            continue
-        payload = build_payload(
-            content,
-            source_id,
-            DATASET.NEWS.value,
-            datetime.now(timezone.utc).isoformat(),
-            TIER.PUBLIC_SENTIMENT.value,
-            source_cfg["url"]
-        )
-        upload_to_s3(payload)
-    return {"statusCode": 200, "body": "Done"}
 
-# ---- Run ------------------------------------------------------
+# ---- Entrypoint ------------------------------------------------------
 
 def run(local: Optional[str] = None) -> bool:
     """Scrape all news sources and upload to S3 or save locally."""
@@ -279,15 +222,15 @@ def run(local: Optional[str] = None) -> bool:
         content = scrape_source(source_id, source_cfg)
 
         if not content:
-            print(f"[SKIP] {source_id} — no content to upload.")
+            logger.warning("[SKIP] %s — no content to upload", source_id)
             continue
 
         payload = build_payload(
             content,
             source_id,
-            DATASET,
-            datetime.now(timezone.utc).isoformat(),
-            TIER,
+            DATASET.NEWS.value,
+            fetch_run_date(),
+            TIER.PUBLIC_SENTIMENT.value,
             source_cfg["url"]
         )
 
@@ -295,7 +238,13 @@ def run(local: Optional[str] = None) -> bool:
             save_local(payload)
         else:
             upload_to_s3(payload)
-    return True    
-    
+
+    return True
+
+
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     run(local="data")
