@@ -13,7 +13,7 @@ import openpyxl
 import requests
 
 from ..commons.data import HEADERS
-from ..commons.config import AWS_REGION, BUCKET_COMP_OFFER, EXPECTED_BUCKET_OWNER
+from ..commons.config import AWS_REGION, BUCKET, EXPECTED_BUCKET_OWNER
 from ..commons.offers_data import BRANDS, COVER_CATEGORY, COVER_TYPES, OFFER_EXCEL_FILE, EXCEL_COL_MAP, OFFER_KEYWORDS
 
 logging.basicConfig(
@@ -308,7 +308,7 @@ def update_excel(results_or_offers, brand: str, merge_fn=None, filepath=OFFER_EX
     logger.info("Excel updated: %s rows written to %s", brand, filepath)
 
 
-def update_excel_on_s3(results_or_offers, brand: str, merge_fn=None, bucket=BUCKET_COMP_OFFER, key=S3_EXCEL_KEY) -> None:
+def update_excel_on_s3(results_or_offers, brand: str, merge_fn=None, bucket=BUCKET, key=S3_EXCEL_KEY) -> None:
     try:
         import boto3
     except ImportError:
