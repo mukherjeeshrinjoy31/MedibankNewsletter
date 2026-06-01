@@ -14,6 +14,7 @@ from src.scrapers.public_sentiment.abc_news import run as run_abc_news
 from src.scrapers.public_sentiment.ozbargain_deals import run as run_ozbargain
 from src.scrapers.public_sentiment.sbs_news import run as run_sbs_news
 from src.scrapers.public_sentiment.the_guardian_au import run as run_guardian
+
 from src.scrapers.stock_market.stock_prices import run as run_stock_prices
 from src.scrapers.medibank_specific.medibank_asx_scraper import run as run_medibank_asx
 from src.scrapers.medibank_specific.nib_asx_scraper import run as run_nib_asx
@@ -41,7 +42,7 @@ class ScraperOrchestrator:
         self.local = local
         self.scrapers = [
             # Public Sentiment
-            ("canstar_health_awards", run_canstar,    TIER.PUBLIC_SENTIMENT),
+            ("canstar_health_awards", run_canstar,     TIER.PUBLIC_SENTIMENT),
             ("ama",                   run_ama,         TIER.PUBLIC_SENTIMENT),
             ("choice_articles",       run_choice,      TIER.PUBLIC_SENTIMENT),
             ("news_articles",         run_news,        TIER.PUBLIC_SENTIMENT),
@@ -50,13 +51,14 @@ class ScraperOrchestrator:
             ("sbs_news",              run_sbs_news,    TIER.PUBLIC_SENTIMENT),
             ("the_guardian_au",       run_guardian,    TIER.PUBLIC_SENTIMENT),
             # Stock Market
+            
             ("stock_prices",          run_stock_prices, TIER.COMPETITOR),
             # Medibank Specific
             ("medibank_asx",          run_medibank_asx,    TIER.MEDIBANK_SPECIFIC),
             ("nib_asx",               run_nib_asx,         TIER.MEDIBANK_SPECIFIC),
-            ("medibank_media",        run_medibank_media,   TIER.MEDIBANK_SPECIFIC),
-            ("hbf_offers",            run_hbf_offers,       TIER.MEDIBANK_SPECIFIC),
-            ("hcf_offers",            run_hcf_offers,       TIER.MEDIBANK_SPECIFIC),
+            ("medibank_media",        run_medibank_media,  TIER.MEDIBANK_SPECIFIC),
+            ("hbf_offers",            run_hbf_offers,      TIER.MEDIBANK_SPECIFIC),
+            ("hcf_offers",            run_hcf_offers,      TIER.MEDIBANK_SPECIFIC),
             # PHI Industry
             ("accc",                  run_accc,          TIER.PHI),
             ("apra",                  run_apra,          TIER.PHI),

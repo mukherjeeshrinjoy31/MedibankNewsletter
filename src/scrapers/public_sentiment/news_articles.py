@@ -43,24 +43,15 @@ SOURCES = {
     }
 }
 
-KEYWORDS = {
-    "phi": [
+KEYWORDS = [
         "medibank", "bupa", "nib", "hcf", "hbf",
         "health insurance", "health fund",
         "health cover", "health insurer", "private health"
-    ],
-    "health_tech": [
-        "health technology", "digital health", "health ai",
-        "medical ai", "health innovation", "medtech",
-        "telehealth", "health data", "wearable health",
-        "health automation", "clinical ai", "precision medicine"
     ]
-}
 
 # Keywords that need whole-word matching (short words that appear as substrings)
 WHOLE_WORD_KEYWORDS     = {"nib", "hcf", "hbf", "bupa"}
 HEADERS                 = {"User-Agent": "Mozilla/5.0"}
-ALL_KEYWORDS            = [kw.lower() for kws in KEYWORDS.values() for kw in kws]
 DATE_FORMATS            = [
     "%a, %d %b %Y %H:%M:%S %Z",
     "%a, %d %b %Y %H:%M:%S %z",
@@ -154,15 +145,10 @@ def keyword_found(kw: str, text: str) -> bool:
     return kw in text
 
 
-def matches_keywords(text: str, matches: int = 1) -> bool:
+def matches_keywords(text: str) -> bool:
     """Return True if text matches at least `matches` keyword groups."""
     text = text.lower()
-    groups_matched = sum(
-        any(keyword_found(kw, text) for kw in kws)
-        for kws in KEYWORDS.values()
-    )
-    return groups_matched >= matches
-
+    return any(keyword_found(kw, text) for kw in KEYWORDS)
 
 # ---- Article Fetching ------------------------------------------------------
 

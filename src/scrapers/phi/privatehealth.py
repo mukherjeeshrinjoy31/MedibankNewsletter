@@ -1,11 +1,11 @@
 import io
+import logging
 import os
 import shutil
 import zipfile
 from typing import Optional
 
 import pandas as pd
-import pdfplumber
 import requests
 import xml.etree.ElementTree as ET
 
@@ -18,6 +18,12 @@ SOURCE     = "privatehealth"
 OUTPUT_DIR = "data/privatehealth"
 SKIP_EXTS  = {".xsd", ".txt"}
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# File Readers
+# ---------------------------------------------------------------------------
 
 def read_csv(filepath: str) -> str:
     """Read a CSV file and return as formatted string."""
@@ -27,7 +33,8 @@ def read_csv(filepath: str) -> str:
         df = df.fillna("")
         return df.to_csv(index=False)
     except Exception as e:
-        return f"Could not read CSV: {e}"
+        logger.error("Could not read CSV %s: %s", filepath, e)
+        return ""
 
 
 def read_xml(filepath: str) -> str:
@@ -42,7 +49,8 @@ def read_xml(filepath: str) -> str:
                 lines.append(f"{tag}: {elem.text.strip()}")
         return "\n".join(lines[:200])
     except Exception as e:
-        return f"Could not read XML: {e}"
+        logger.error("Could not read XML %s: %s", filepath, e)
+        return ""
 
 
 def read_file(filepath: str) -> str:
@@ -59,10 +67,14 @@ def read_file(filepath: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
+
 def scrape_privatehealth() -> str:
     """Download and extract PHI product ZIP, read all files, return combined content."""
-    print("--- PrivateHealth.gov.au ZIP ---")
-    print("Finding latest ZIP file...")
+    logger.info("--- PrivateHealth.gov.au ZIP ---")
+    logger.info("Finding latest ZIP file...")
 
     soup = fetch_url(PRIVATE_HEALTH_URL)
     zip_url = None
@@ -74,26 +86,31 @@ def scrape_privatehealth() -> str:
                 break
 
     if not zip_url:
-        print("Couldn't find ZIP dynamically — using known fallback URL")
+        logger.warning("Could not find ZIP dynamically — using fallback URL.")
         zip_url = PRIVATE_HEALTH_FALLBACK_ZIP_URL
 
-    print(f"Downloading: {zip_url}")
-    r = requests.get(zip_url, headers=HEADERS, timeout=60)
+    logger.info("Downloading: %s", zip_url)
 
-    content = "PrivateHealth.gov.au Monthly Product Data\n\n"
+    try:
+        r = requests.get(zip_url, headers=HEADERS, timeout=60)
+    except Exception as e:
+        logger.error("Failed to download ZIP: %s", e)
+        return ""
 
     if r.status_code != 200:
-        print(f"✗ Failed: {r.status_code}")
-        return (content + "Download failed. Check data.gov.au manually.").strip()
+        logger.error("Failed to download ZIP: HTTP %s", r.status_code)
+        return ""
 
-    print("✓ ZIP downloaded! Extracting...")
+    logger.info("✓ ZIP downloaded! Extracting...")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         z.extractall(OUTPUT_DIR)
         extracted = z.namelist()
 
-    print(f"✓ Extracted {len(extracted)} files")
+    logger.info("✓ Extracted %d files", len(extracted))
+
+    content = "PrivateHealth.gov.au Monthly Product Data\n\n"
 
     for filename in extracted:
         ext = os.path.splitext(filename)[1].lower()
@@ -101,24 +118,33 @@ def scrape_privatehealth() -> str:
             continue
 
         filepath = os.path.join(OUTPUT_DIR, filename)
-        print(f"Reading: {filename}...")
+        logger.info("Reading: %s...", filename)
         text = read_file(filepath)
 
         if text:
             content += f"=== {filename} ===\n{text}\n\n"
-            print(f"✓ {filename} — {len(text):,} chars extracted")
+            logger.info("✓ %s — %d chars extracted", filename, len(text))
 
     shutil.rmtree(OUTPUT_DIR)
-    print(f"Deleted folder: {OUTPUT_DIR}")
+    logger.info("Deleted folder: %s", OUTPUT_DIR)
 
     return content.strip()
 
 
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
 def run(local: Optional[str] = None) -> bool:
     """Scrape PHI product data and upload to S3 or save locally."""
-    print(f"Starting PHI Scraper for private health from: {PRIVATE_HEALTH_URL}")
+    logger.info("Starting PHI Scraper for private health from: %s", PRIVATE_HEALTH_URL)
     content = scrape_privatehealth()
-    print(f"\nExtracted {len(content):,} characters of text.")
+
+    if not content:
+        logger.warning("No content extracted — skipping.")
+        return False
+
+    logger.info("Extracted %d characters of text.", len(content))
     payload = build_payload(
         content,
         SOURCE,
@@ -132,4 +158,8 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
-    return True    
+    return True
+
+
+if __name__ == "__main__":
+    run(local="data")

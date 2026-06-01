@@ -17,3 +17,6 @@ offer_files/
 # Logs
 *.log
 logs/
+
+# Git
+.git/

@@ -1,19 +1,30 @@
+import logging
 import os
-
 from typing import Optional
+
+from ...commons.data import APRA_BASE_URL, APRA_QUARTERLY_STATISTICS_URL
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
 from ...utils.apra_helpers import download_and_extract
 from ...utils.helpers import build_payload, fetch_run_date, fetch_url, save_local, upload_to_s3
 
-from ...commons.data import APRA_BASE_URL, APRA_QUARTERLY_STATISTICS_URL
+SOURCE = "apra"
 
-SOURCE   = "apra"
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
 
 def scrape_apra_quarterly() -> str:
-    print("--- APRA Quarterly Stats ---")
+    """Scrape APRA quarterly PHI statistics XLSX files and extract content."""
+    logger.info("--- APRA Quarterly Stats ---")
 
     soup = fetch_url(APRA_QUARTERLY_STATISTICS_URL)
+    if not soup:
+        logger.error("fetch_url returned None — request failed.")
+        return ""
 
     xlsx_links = []
     for link in soup.find_all("a", href=True):
@@ -23,22 +34,32 @@ def scrape_apra_quarterly() -> str:
                 href = APRA_BASE_URL + href
             xlsx_links.append((link.get_text(strip=True), href))
 
-    print(f"Found {len(xlsx_links)} XLSX files")
-    os.makedirs("data/apra", exist_ok=True)
+    logger.info("Found %d XLSX files", len(xlsx_links))
 
-    content = download_and_extract(xlsx_links, "APRA Quarterly Private Health Insurance Statistics\n\n")
-
-    # fallback note if nothing found (js-rendered page)
     if not xlsx_links:
-        print("No links found — page likely uses JavaScript. Using source URL as reference.")
-        content += f"Could not extract links dynamically. Check: {APRA_QUARTERLY_STATISTICS_URL}\n"
+        logger.warning("No links found — page likely uses JavaScript.")
+        return ""
+
+    os.makedirs("data/apra", exist_ok=True)
+    content = download_and_extract(xlsx_links, "APRA Quarterly Private Health Insurance Statistics\n\n")
 
     return content.strip()
 
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
 def run(local: Optional[str] = None) -> bool:
-    print(f"Starting PHI Scrapper for APRA from : {APRA_QUARTERLY_STATISTICS_URL}")
-    content = scrape_apra_quarterly()  
-    print(f"\nExtracted {len(content):,} characters of text.")
+    """Scrape APRA quarterly PHI statistics and upload to S3 or save locally."""
+    logger.info("Starting APRA Quarterly Scraper from: %s", APRA_QUARTERLY_STATISTICS_URL)
+    content = scrape_apra_quarterly()
+
+    if not content:
+        logger.warning("No content extracted — skipping.")
+        return False
+
+    logger.info("Extracted %d characters of text.", len(content))
     payload = build_payload(
         content,
         SOURCE,
@@ -53,3 +74,7 @@ def run(local: Optional[str] = None) -> bool:
     else:
         upload_to_s3(payload)
     return True
+
+
+if __name__ == "__main__":
+    run(local="data")

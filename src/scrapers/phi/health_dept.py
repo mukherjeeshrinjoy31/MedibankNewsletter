@@ -1,7 +1,8 @@
-from typing import Optional
+import logging
 import os
 import shutil
 import time
+from typing import Optional
 
 import requests
 
@@ -16,13 +17,17 @@ OUTPUT_DIR = "data/health_dept"
 PREMIUM_RSS_URL  = "https://news.google.com/rss/search?q=private+health+insurance+premium+increase+Australia&hl=en-AU&gl=AU&ceid=AU:en"
 CLINICAL_RSS_URL = "https://news.google.com/rss/search?q=MBS+clinical+categories+private+health+insurance+Australia&hl=en-AU&gl=AU&ceid=AU:en"
 
+logger = logging.getLogger(__name__)
 
-# --- Premium Approvals ---
+
+# ---------------------------------------------------------------------------
+# Premium Approvals
+# ---------------------------------------------------------------------------
 
 def scrape_premium_approvals() -> str:
     """Scrape Dept of Health ministers page for premium approval content."""
-    print("--- Dept of Health: Premium Approvals ---")
-    print("Fetching ministers page...")
+    logger.info("--- Dept of Health: Premium Approvals ---")
+    logger.info("Fetching ministers page...")
 
     soup = fetch_url(HEALTH_DEPT_MINISTERS_URL)
     if soup:
@@ -34,19 +39,21 @@ def scrape_premium_approvals() -> str:
             idx = text.lower().find("premium")
             content = "Dept of Health - Premium Approvals\n\n"
             content += text[max(0, idx - 200):idx + 2000]
-            print("✓ Found premium content dynamically")
+            logger.info("Found premium content dynamically.")
             return content.strip()
 
-    print("Premium content not found — falling back to Google News RSS")
+    logger.warning("Premium content not found — falling back to Google News RSS.")
     return fetch_google_news_rss(PREMIUM_RSS_URL, "Dept of Health — Premium Approvals Latest News", 30)
 
 
-# --- Clinical Categories ---
+# ---------------------------------------------------------------------------
+# Clinical Categories
+# ---------------------------------------------------------------------------
 
 def scrape_clinical_categories() -> str:
     """Scrape Dept of Health for clinical category files, falling back to RSS."""
-    print("--- Dept of Health: Clinical Categories ---")
-    print("Fetching clinical categories page...")
+    logger.info("--- Dept of Health: Clinical Categories ---")
+    logger.info("Fetching clinical categories page...")
 
     soup = fetch_url(HEALTH_DEPT_CLINICAL_URL)
     if soup:
@@ -65,36 +72,38 @@ def scrape_clinical_categories() -> str:
 
             for title, href in links[:3]:
                 filename = href.split("/")[-1]
-                print(f"Downloading: {filename}...")
+                logger.info("Downloading: %s...", filename)
                 try:
                     r = requests.get(href, headers=HEADERS, timeout=30)
                     if r.status_code == 200:
                         with open(os.path.join(OUTPUT_DIR, filename), "wb") as f:
                             f.write(r.content)
                         content += f"- {title}: {filename}\n"
-                        print(f"✓ {filename}")
+                        logger.info("✓ %s", filename)
                     else:
-                        print(f"✗ Failed: {r.status_code}")
+                        logger.warning("Failed to download %s: %s", filename, r.status_code)
                 except Exception as e:
-                    print(f"✗ Error: {e}")
+                    logger.error("Error downloading %s: %s", filename, e)
                 time.sleep(1)
 
             shutil.rmtree(OUTPUT_DIR)
-            print(f"Deleted folder: {OUTPUT_DIR}")
+            logger.info("Deleted folder: %s", OUTPUT_DIR)
             return content.strip()
 
-    print("No clinical category files found — falling back to Google News RSS")
+    logger.warning("No clinical category files found — falling back to Google News RSS.")
     return fetch_google_news_rss(CLINICAL_RSS_URL, "Dept of Health — Clinical Categories Latest News", 30)
 
 
-# --- Run ---
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
 def run(local: Optional[str] = None) -> bool:
     """Scrape Dept of Health premium approvals and clinical categories."""
-    print("Starting Health Dept Scraper")
+    logger.info("Starting Health Dept Scraper")
 
     premium_content = scrape_premium_approvals()
-    print(f"\nExtracted {len(premium_content):,} characters (premium approvals)")
+    logger.info("Extracted %d characters (premium approvals)", len(premium_content))
     premium_payload = build_payload(
         premium_content,
         SOURCE,
@@ -105,7 +114,7 @@ def run(local: Optional[str] = None) -> bool:
     )
 
     clinical_content = scrape_clinical_categories()
-    print(f"\nExtracted {len(clinical_content):,} characters (clinical categories)")
+    logger.info("Extracted %d characters (clinical categories)", len(clinical_content))
     clinical_payload = build_payload(
         clinical_content,
         SOURCE,
@@ -122,3 +131,7 @@ def run(local: Optional[str] = None) -> bool:
         upload_to_s3(premium_payload)
         upload_to_s3(clinical_payload)
     return True
+
+
+if __name__ == "__main__":
+    run(local="data")

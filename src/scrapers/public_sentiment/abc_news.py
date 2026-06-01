@@ -1,22 +1,34 @@
 import json
+import logging
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Tuple
+
+from playwright.sync_api import sync_playwright
+
+from ...commons.data import ABC_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_URLS
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from playwright.sync_api import sync_playwright
-from ...utils.helpers import build_content_list, build_payload, fetch_cutoff_date, fetch_run_date, is_boilerplate, matches_keywords, save_local, upload_to_s3
+from ...utils.helpers import (
+    build_content_list, build_payload, fetch_cutoff_date,
+    fetch_run_date, is_boilerplate, matches_keywords,
+    save_local, upload_to_s3
+)
 
-from ...commons.data import ABC_NEWS_URL, NEWS_BOILERPLATE_PATTERNS, NEWS_KEYWORDS, NEWS_URLS
-
-# ---- Config ------------------------------------------------------
 SOURCE = "abc"
-MAX_ARTICLES = 40  
-SCROLL_PASSES = 4 
+MAX_ARTICLES = 40
+SCROLL_PASSES = 4
 ARTICLE_URL_PATTERN = re.compile(r"^/news/(?:.+/)?\d{4}-\d{2}-\d{2}/.+/\d+$")
 
-# ---- Helpers ------------------------------------------------------
-def parse_abc_date(page) -> datetime | None:
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def parse_abc_date(page) -> Optional[datetime]:
+    """Extract publication date from JSON-LD or meta tags."""
     try:
         raw = page.eval_on_selector_all(
             'script[type="application/ld+json"]',
@@ -48,17 +60,20 @@ def parse_abc_date(page) -> datetime | None:
     return None
 
 
-# ---- Scraping Logic ------------------------------------------------------
-def collect_links(page, url: str) -> list[dict]:
-    """Scroll through a listing page and return all candidate <a> elements."""
-    print(f"  Scanning: {url}")
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
+
+def collect_links(page, url: str) -> List[dict]:
+    """Scroll through a listing page and return all candidate article links."""
+    logger.info("Scanning: %s", url)
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=30_000)
         for _ in range(SCROLL_PASSES):
             page.keyboard.press("End")
             page.wait_for_timeout(2_000)
     except Exception as exc:
-        print(f"  [WARN] Failed to load {url}: {exc}")
+        logger.warning("Failed to load %s: %s", url, exc)
         return []
 
     return page.eval_on_selector_all(
@@ -66,17 +81,21 @@ def collect_links(page, url: str) -> list[dict]:
         """elements => elements.map(el => ({
             text: el.innerText.trim().replace(/^result number \\d+\\s*/i, ''),
             href: el.getAttribute('href'),
-            parentText: el.closest('article')?.innerText
-                        || el.parentElement?.innerText
+            parentText: el.closest('article')
+                        ?.querySelector('h1,h2,h3,h4')
+                        ?.innerText?.trim()
+                        || el.parentElement?.innerText?.trim()
                         || ''
         }))"""
     )
 
 
-def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
+def fetch_article_body(page, url: str) -> Tuple[str, Optional[datetime]]:
+    """Fetch article page and extract body text and publication date."""
     try:
-        page.goto(url, wait_until="networkidle", timeout=30_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=15_000)
     except Exception as exc:
+        logger.warning("Error loading article %s: %s", url, exc)
         return f"(Error loading article: {exc})", None
 
     pub_date = parse_abc_date(page)
@@ -89,35 +108,45 @@ def fetch_article_body(page, url: str) -> tuple[str, datetime | None]:
         paragraphs = [p for p in paragraphs if not is_boilerplate(p, NEWS_BOILERPLATE_PATTERNS["ABC"])]
         body = "\n\n".join(paragraphs) if paragraphs else "(Could not extract body)"
     except Exception as exc:
+        logger.warning("Error extracting body from %s: %s", url, exc)
         body = f"(Error extracting body: {exc})"
 
     return body, pub_date
 
 
-def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> list[dict]:
-    all_links: list[dict] = []
+def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> List[dict]:
+    """Collect and filter ABC news articles using Playwright."""
+    all_links: List[dict] = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         listing_page = browser.new_page()
 
-        print("\nCollecting article links …\n")
+        logger.info("Collecting article links...")
         for source_url in NEWS_URLS["ABC"]:
             links = collect_links(listing_page, source_url)
-            print(f"  Got {len(links)} links from {source_url}")
+            logger.info("Got %d links from %s", len(links), source_url)
             all_links.extend(links)
+        
+        listing_page.close()
 
-        seen_hrefs: set[str] = set()
-        candidates: list[dict] = []
+        seen_hrefs: set = set()
+        candidates: List[dict] = []
         rejected = {"url_pattern": 0, "duplicate": 0, "short_headline": 0, "keyword": 0}
 
-        for link in all_links:
+        for i, link in enumerate(all_links):
+
+            if len(candidates) >= max_articles:
+                break
+
             href = link.get("href", "")
             headline = link.get("text", "").strip()
             parent_text = link.get("parentText", "").strip()
 
             if href.startswith("https://www.abc.net.au"):
                 href = href[len("https://www.abc.net.au"):]
+            href = href.rstrip("/")
+
             if not ARTICLE_URL_PATTERN.match(href):
                 rejected["url_pattern"] += 1
                 continue
@@ -127,59 +156,58 @@ def scrape_abc_playwright(max_articles: int = MAX_ARTICLES) -> list[dict]:
             if len(headline) < 15:
                 rejected["short_headline"] += 1
                 continue
-            if not matches_keywords(headline + " " + parent_text):
+            seen_hrefs.add(href)
+            url = f"https://www.abc.net.au{href}"
+
+            article_page = browser.new_page()
+            try:
+                body, pub_date = fetch_article_body(article_page, url)
+            except Exception as exc:
+                logger.info("Failed to fetch body for %s: %s", url, exc)
+                continue
+            finally:
+                article_page.close()
+            
+            if not matches_keywords(headline + " " + parent_text + " " + body):
                 rejected["keyword"] += 1
                 continue
+            
+            logger.info("[%d] %s", i + 1, headline)
+            if pub_date and pub_date < fetch_cutoff_date(7):
+                    logger.info("Skipped (too old: %s)", pub_date.date())
+                    continue
 
-            seen_hrefs.add(href)
             candidates.append({
                 "headline": headline,
-                "url": f"https://www.abc.net.au{href}",
-                "body": "",
-                "pub_date": None,
+                "url": url,
+                "body": body,
+                "pub_date": pub_date.isoformat() if pub_date else None,
             })
 
-        print(f"\nTotal links: {len(all_links)}")
-        print(f"Rejections: {rejected}")
-        print(f"After keyword filter: {len(candidates)} candidate(s). Fetching top {max_articles} …\n")
-
-        candidates = candidates[:max_articles]
-
-        article_page = browser.new_page()
-        kept: list[dict] = []
-
-        for i, article in enumerate(candidates):
-            label = article["headline"][:65]
-            print(f"  [{i+1}/{len(candidates)}] {label} …")
-
-            body, pub_date = fetch_article_body(article_page, article["url"])
-            article["body"] = body
-            article["pub_date"] = pub_date
-
-            # skip articles outside our look-back window
-            if pub_date and pub_date < fetch_cutoff_date(7):
-                print(f"    → Skipped (too old: {pub_date.date()})")
-                continue
-
-            if pub_date:
-                article["pub_date"] = pub_date.isoformat()
-            else:
-                article["pub_date"] = None   # unknown date – keep anyway
-
-            kept.append(article)
         browser.close()
-    print(f"\nArticles kept after date filter: {len(kept)}")
-    return kept
+
+    logger.info("\nTotal links: %d", len(all_links))
+    logger.info("Rejections: %s", rejected)
+    logger.info("Articles kept: %d", len(candidates))
+    return candidates
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
 def run(local: Optional[str] = None) -> bool:
-    print("Starting Playwright-based ABC News scraper — PHI / health-tech")
+    """Scrape ABC News articles and upload to S3 or save locally."""
+    logger.info("Starting Playwright-based ABC News scraper")
     articles = scrape_abc_playwright(MAX_ARTICLES)
+
     if not articles:
-        print("No matching articles found.")
+        logger.warning("No matching articles found — skipping.")
         return False
-    else:
-        content = build_content_list(articles)  
-    print(f"\nExtracted {len(content):,} characters of text.")
+
+    content = build_content_list(articles)
+    logger.info("Extracted %d characters of text.", len(content))
+
     payload = build_payload(
         content,
         SOURCE,
@@ -193,5 +221,8 @@ def run(local: Optional[str] = None) -> bool:
         save_local(payload)
     else:
         upload_to_s3(payload)
+    return True
 
-# run "python ama.py --local" to save locally to a "data" directory instead of uploading to S3
+
+if __name__ == "__main__":
+    run(local="data")

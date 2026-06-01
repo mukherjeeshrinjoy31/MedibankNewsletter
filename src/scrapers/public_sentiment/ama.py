@@ -1,29 +1,48 @@
 import io
+import logging
 import re
-from typing import Optional
-import pdfplumber
 from datetime import datetime
+from typing import Optional, List, Tuple
 from urllib.parse import urlparse
+
+import pdfplumber
 
 from ...commons.data import AMA_REPORT_URL, AMA_SOURCE_URL
 from ...commons.dataset import DATASET
 from ...commons.tiers import TIER
-from ...utils.helpers import build_payload, download_pdf, fetch_cutoff_date, fetch_run_date, fetch_url, parse_date, save_local, upload_to_s3
+from ...utils.helpers import (
+    build_payload, download_pdf, fetch_cutoff_date,
+    fetch_run_date, fetch_url, parse_date,
+    save_local, upload_to_s3
+)
 
-# ---- Config ------------------------------------------------------
-SOURCE = "ama" # Australian Medical Association
+SOURCE = "ama"
 KEYWORD = "private health insurance"
 DATE_FORMATS = ["%d %B %Y", "%B %d, %Y", "%Y-%m-%d", "%d/%m/%Y"]
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def get_report_publish_date(report_url: str) -> Optional[datetime]:
+    """Extract publication date from a report page."""
     soup = fetch_url(report_url)
- 
+    if not soup:
+        logger.warning("Could not fetch report page: %s", report_url)
+        return None
+
     time_tag = soup.find("time")
     if time_tag:
-        pub_date = parse_date(time_tag.get("datetime", ""), DATE_FORMATS) or parse_date(time_tag.get_text(), DATE_FORMATS)
+        pub_date = (
+            parse_date(time_tag.get("datetime", ""), DATE_FORMATS)
+            or parse_date(time_tag.get_text(), DATE_FORMATS)
+        )
         if pub_date:
             return pub_date
- 
+
     for node in soup.find_all(string=re.compile(r"^\s*Published\s*$", re.IGNORECASE)):
         sibling = node.find_next(string=True)
         while sibling and not sibling.strip():
@@ -32,7 +51,7 @@ def get_report_publish_date(report_url: str) -> Optional[datetime]:
             pub_date = parse_date(sibling.strip())
             if pub_date:
                 return pub_date
- 
+
     date_pattern = re.compile(
         r"\b(\d{1,2}\s+\w+\s+\d{4}|\w+\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2})\b"
     )
@@ -42,96 +61,105 @@ def get_report_publish_date(report_url: str) -> Optional[datetime]:
             pub_date = parse_date(m.group(1))
             if pub_date:
                 return pub_date
- 
+
     return None
 
-def find_report_url(listing_url: str, keyword: str) -> str:
+
+def find_report_url(listing_url: str, keyword: str) -> Optional[str]:
+    """Find the most relevant report URL from the AMA listing page."""
     soup = fetch_url(listing_url)
+    if not soup:
+        logger.error("Could not fetch listing page: %s", listing_url)
+        return None
+
     parsed_base = urlparse(listing_url)
     base_url = f"{parsed_base.scheme}://{parsed_base.netloc}"
- 
+
     candidates = soup.find_all("a", string=re.compile(keyword, re.IGNORECASE))
- 
     if not candidates:
         candidates = [
             a for a in soup.find_all("a")
             if a.get_text(strip=True)
             and re.search(keyword, a.get_text(strip=True), re.IGNORECASE)
         ]
- 
+
     if not candidates:
-        raise RuntimeError(
-            f"No report titles matching '{keyword}' found on: {listing_url}"
-        )
- 
-    dated_candidates: list[tuple[datetime, str, str]] = []   # (pub_date, title, href)
-    undated_candidates: list[tuple[str, str]] = []            # (title, href)
- 
+        logger.error("No report titles matching '%s' found on: %s", keyword, listing_url)
+        return None
+
+    dated_candidates: List[Tuple[datetime, str, str]] = []
+    undated_candidates: List[Tuple[str, str]] = []
+
     for anchor in candidates:
         title = anchor.get_text(strip=True)
         href = anchor.get("href", "")
         if not href:
             continue
- 
+
         if href.startswith("/"):
             href = base_url + href
- 
-        print(f"Checking report: '{title}'\n  {href}")
+
+        logger.info("Checking report: '%s'\n  %s", title, href)
         pub_date = get_report_publish_date(href)
- 
+
         if pub_date:
             if pub_date >= fetch_cutoff_date(7):
-                print(f"  Within range ({pub_date.date()}) - using this report.")
+                logger.info("Within range (%s) - using this report.", pub_date.date())
                 return href
-            print(f"  Outside 7-day range ({pub_date.date()}) - noting as fallback.")
+            logger.info("Outside 7-day range (%s) - noting as fallback.", pub_date.date())
             dated_candidates.append((pub_date, title, href))
         else:
-            print("  Warning: could not determine publish date. Noting as fallback.")
+            logger.warning("Could not determine publish date for '%s'. Noting as fallback.", title)
             undated_candidates.append((title, href))
- 
-    # fall back to the most recent dated report
+
+    # Fall back to most recent dated report
     if dated_candidates:
         dated_candidates.sort(key=lambda x: x[0], reverse=True)
         most_recent_date, most_recent_title, most_recent_href = dated_candidates[0]
-        print(
-            f"\nNo reports within the last 30 days. "
-            f"Falling back to most recent: '{most_recent_title}' ({most_recent_date.date()})"
+        logger.info(
+            "No reports within the last 30 days. Falling back to most recent: '%s' (%s)",
+            most_recent_title, most_recent_date.date()
         )
         return most_recent_href
- 
-    # use the first undated candidate if all reports are undated
+
+    # Fall back to first undated candidate
     if undated_candidates:
         title, href = undated_candidates[0]
-        print(f"\nNo dated reports found. Falling back to first candidate: '{title}'")
+        logger.info("No dated reports found. Falling back to first candidate: '%s'", title)
         return href
- 
-    print(f"No valid report URLs found for keyword '{keyword}' on: {listing_url}. Skipping.")
+
+    logger.warning("No valid report URLs found for keyword '%s' on: %s", keyword, listing_url)
     return None
 
-def find_pdf_url(page_url: str) -> str:
+
+def find_pdf_url(page_url: str) -> Optional[str]:
+    """Find the PDF download link on a report page."""
     soup = fetch_url(page_url)
+    if not soup:
+        logger.error("Could not fetch report page: %s", page_url)
+        return None
 
     pdf_link = soup.find("a", href=re.compile(r"\.pdf$", re.IGNORECASE))
     if not pdf_link:
-        raise RuntimeError(f"No PDF link found on page: {page_url}")
+        logger.error("No PDF link found on page: %s", page_url)
+        return None
 
     href = pdf_link["href"]
-
-    # Handle relative URLs
     if href.startswith("/"):
         parsed = urlparse(page_url)
         href = f"{parsed.scheme}://{parsed.netloc}{href}"
 
-    print(f"Found PDF: {href}")
+    logger.info("Found PDF: %s", href)
     return href
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extract and clean text from PDF bytes."""
     pages_text = []
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        print(f"Extracting text from {len(pdf.pages)} pages...")
-        for i, page in enumerate(pdf.pages, start=1):
+        logger.info("Extracting text from %d pages...", len(pdf.pages))
+        for page in pdf.pages:
             text = page.extract_text()
             if text:
                 cleaned = re.sub(r" \n {3,}", " \n\n ", text.strip())
@@ -139,25 +167,48 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
     return " \n\n ".join(pages_text)
 
+
+# ---------------------------------------------------------------------------
+# Scraping
+# ---------------------------------------------------------------------------
+
 def scrape() -> Optional[str]:
+    """Find, download and extract text from the latest AMA PHI report."""
     report_page_url = find_report_url(AMA_REPORT_URL, KEYWORD)
     if not report_page_url:
         return None
-    pdf_url = find_pdf_url(report_page_url)
-    pdf_bytes = download_pdf(pdf_url)
-    text = extract_text_from_pdf(pdf_bytes)
 
+    pdf_url = find_pdf_url(report_page_url)
+    if not pdf_url:
+        return None
+
+    pdf_bytes = download_pdf(pdf_url)
+    if not pdf_bytes:
+        logger.error("Failed to download PDF from: %s", pdf_url)
+        return None
+
+    text = extract_text_from_pdf(pdf_bytes)
     if not text.strip():
-        raise RuntimeError("PDF text extraction returned empty content.")
+        logger.error("PDF text extraction returned empty content.")
+        return None
+
     return text
 
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
 def run(local: Optional[str] = None) -> bool:
-    print(f"Scraping AMA Private Health Insurance Report Card from: \n  {AMA_SOURCE_URL} \n")
+    """Scrape AMA PHI report and upload to S3 or save locally."""
+    logger.info("Scraping AMA Private Health Insurance Report Card from: %s", AMA_SOURCE_URL)
     content = scrape()
-    if content is None:
-        print("Nothing to upload. Exiting.")
-        exit(1)
-    print(f"\nExtracted {len(content):,} characters of text.")
+
+    if not content:
+        logger.warning("No content extracted — skipping.")
+        return False
+
+    logger.info("Extracted %d characters of text.", len(content))
     payload = build_payload(
         content,
         SOURCE,
@@ -166,8 +217,13 @@ def run(local: Optional[str] = None) -> bool:
         TIER.PUBLIC_SENTIMENT.value,
         AMA_SOURCE_URL
     )
+
     if local:
         save_local(payload)
     else:
         upload_to_s3(payload)
     return True
+
+
+if __name__ == "__main__":
+    run(local="data")
