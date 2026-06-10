@@ -29,7 +29,8 @@ aws lambda add-permission \
     --statement-id "EventBridgeInvoke" \
     --action "lambda:InvokeFunction" \
     --principal "scheduler.amazonaws.com" \
-    --region $RESEARCH_AWS_REGION 2>/dev/null || echo "Permission already exists — skipping."
+    --region $RESEARCH_AWS_REGION \
+    --output text > /dev/null 2>/dev/null || echo "Permission already exists — skipping."
 echo "✓ Permission added"
 
 # Step 2 — Create EventBridge schedule

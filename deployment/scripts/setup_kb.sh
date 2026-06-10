@@ -48,8 +48,8 @@ KB_RESPONSE=$(aws bedrock-agent create-knowledge-base \
     --storage-configuration "{
         \"type\": \"S3_VECTORS\",
         \"s3VectorsConfiguration\": {
-            \"bucketArn\": \"arn:aws:s3:::bedrock-kb-$KB_NAME\",
-            \"vectorIndexName\": \"$KB_NAME-index\"
+            \"vectorBucketArn\": \"arn:aws:s3:::bedrock-kb-$KB_NAME\",
+            \"indexName\": \"$KB_NAME-index\"
         }
     }" \
     --region $RESEARCH_AWS_REGION)

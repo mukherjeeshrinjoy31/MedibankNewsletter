@@ -27,7 +27,7 @@ LAMBDA_ZIP="$LAMBDA_DIR/lambda_function.zip"
 
 # Step 1 — Package Lambda function
 echo ""
-echo "[1/4] Packaging Lambda function..."
+echo "[1/5] Packaging Lambda function..."
 mkdir -p "$LAMBDA_DIR"
 cp "$PROJECT_DIR/src/lambda_handler.py" "$LAMBDA_DIR/lambda_function.py"
 cd "$LAMBDA_DIR"
@@ -36,7 +36,7 @@ echo "✓ Lambda function packaged"
 
 # Step 2 — Create Lambda function
 echo ""
-echo "[2/4] Creating Lambda function..."
+echo "[2/5] Creating Lambda function..."
 LAMBDA_ARN=$(aws lambda create-function \
     --function-name $LAMBDA_FUNCTION_NAME \
     --description "AI-driven weekly market intelligence briefing for Medibank - P000268DS, RMIT University" \
@@ -58,9 +58,25 @@ aws lambda update-function-code \
     --output text)
 echo "✓ Lambda function created: $LAMBDA_FUNCTION_NAME"
 
-# Step 3 — Set environment variables
+# ---- Wait for Lambda to be ready ----
 echo ""
-echo "[3/4] Setting environment variables..."
+echo "Waiting for Lambda to be ready..."
+aws lambda wait function-updated \
+    --function-name $LAMBDA_FUNCTION_NAME \
+    --region $RESEARCH_AWS_REGION
+echo "✓ Lambda ready"
+
+# Step 3 — Create CloudWatch log group
+echo ""
+echo "[3/5] Creating CloudWatch log group..."
+aws logs create-log-group \
+    --log-group-name /aws/lambda/$LAMBDA_FUNCTION_NAME \
+    --region $RESEARCH_AWS_REGION 2>/dev/null || echo "Log group already exists — skipping."
+echo "✓ Log group created: /aws/lambda/$LAMBDA_FUNCTION_NAME"
+
+# Step 4 — Set environment variables
+echo ""
+echo "[4/5] Setting environment variables..."
 aws lambda update-function-configuration \
     --function-name $LAMBDA_FUNCTION_NAME \
     --environment "Variables={
@@ -69,12 +85,22 @@ aws lambda update-function-configuration \
         EMAIL_RECIPIENTS=$EMAIL_RECIPIENTS,
         REGION=$RESEARCH_AWS_REGION
     }" \
-    --region $RESEARCH_AWS_REGION
+    --region $RESEARCH_AWS_REGION \
+    --query "FunctionArn" \
+    --output text > /dev/null
 echo "✓ Environment variables set"
 
-# Step 4 — Verify
+# ---- Wait for Lambda to be ready again ----
 echo ""
-echo "[4/4] Verifying Lambda function..."
+echo "Waiting for Lambda to apply configuration..."
+aws lambda wait function-updated \
+    --function-name $LAMBDA_FUNCTION_NAME \
+    --region $RESEARCH_AWS_REGION
+echo "✓ Lambda configuration applied"
+
+# Step 5 — Verify
+echo ""
+echo "[5/5] Verifying Lambda function..."
 aws lambda get-function \
     --function-name $LAMBDA_FUNCTION_NAME \
     --region $RESEARCH_AWS_REGION \
